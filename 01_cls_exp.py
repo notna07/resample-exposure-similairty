@@ -1,0 +1,187 @@
+# Description: Script holding the experimenter module for the classification tack experiments.
+# Author: Anton D. Lautrup
+# Date: 20-05-2025
+
+import os
+import sys
+sys.path.append(".")
+
+import numpy as np
+import pandas as pd
+
+from pandas import DataFrame, Series
+from typing import Dict, Tuple
+
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+
+from sklearn.model_selection import StratifiedKFold, KFold
+
+from prepare_data import preprocess_data, uci_dataset_id_import
+from plots import plot_cross_validation_results
+from KNN_adapters import KNNAdapter
+
+from joblib import Parallel, delayed
+
+def run_cross_validation(X: DataFrame, y: Series, KNN_method: KNNAdapter, kfold: KFold, k: int) -> float:
+    knn_model = KNN_method(n_neighbors=k)
+    scores, errs = [], []
+    for train_index, test_index in kfold.split(X, y):
+        X_train_fold, X_test_fold = X.iloc[train_index], X.iloc[test_index]
+        y_train_fold, y_test_fold = y.iloc[train_index], y.iloc[test_index]
+
+        knn_model.fit_cls(X_train_fold, y_train_fold)
+        y_pred = knn_model.predict(X_test_fold)
+        score = accuracy_score(y_test_fold, y_pred)
+        scores.append(score)
+        errs.append(np.mean(y_pred != y_test_fold))
+
+    avg_score = np.mean(scores)
+    std_score = np.std(scores, ddof=1)
+
+    avg_err = np.mean(errs)
+    std_err = np.std(errs, ddof=1)
+    return avg_err, std_err
+
+def run_experiment(df_tuple: Tuple[DataFrame, str], KNN_method: KNNAdapter, best_k: int = None, test_size: float = 0.2, random_state: int = 42) -> Dict[str, float]:
+    """ Run a classification experiment using the specified KNN method.
+
+    Arguments:
+    - df_tuple (Tuple[DataFrame, str]): A tuple containing the DataFrame and its name.
+    - KNN_method (KNNAdapter): The KNN method to use for classification.
+    - best_k (int): The number of neighbors to use for KNN. If None, the best k will be determined using cross-validation.
+    - test_size (float): The proportion of the dataset to include in the test split.
+    - random_state (int): Random state for reproducibility.
+
+    Returns:
+    - Dictionary with accuracy, precision, recall, and F1 score.
+    """
+    # Unpack the materials
+    df, df_name = df_tuple
+    exp_name = KNN_method.name()
+
+    X, y = df.drop(columns=['class']), df['class']
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state, stratify=y)
+ 
+    min_items = y_train.value_counts().min()
+    k_max = min(int(np.ceil(2.0*min_items/3.0)), 21)
+
+    # Use cross-validation to find the best k if not provided
+    if best_k is None:
+        grid = np.arange(1, k_max)
+        group_kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
+
+        results = Parallel(n_jobs=1)(
+            delayed(run_cross_validation)(X_train, y_train, KNN_method, group_kfold, k) for k in grid
+        )
+        avg_scores_lst, std_scores_lst = [result[0] for result in results], [result[1] for result in results]
+
+        best_k = grid[np.argmin(avg_scores_lst)]
+
+        plot_cross_validation_results(df_name, exp_name, grid, avg_scores_lst, std_scores_lst, var_name='Error rate')
+
+    # best_k = (np.sqrt(len(X_train))/2).astype(int)
+    knn_model = KNN_method(n_neighbors=best_k)
+    knn_model.fit_cls(X_train, y_train)
+
+    # Make predictions
+    y_pred = knn_model.predict(X_test)
+    
+    # Calculate metrics
+    accuracy = accuracy_score(y_test, y_pred)
+    precision = precision_score(y_test, y_pred, average='weighted')
+    recall = recall_score(y_test, y_pred, average='weighted')
+    f1 = f1_score(y_test, y_pred, average='weighted')
+    
+    return {
+        'method': exp_name,
+        'test_size': test_size,
+        'df_name': df_name,
+        'best_k': best_k,
+        'accuracy': accuracy,
+        'precision': precision,
+        'recall': recall,
+        'f1_score': f1,
+        'seed': random_state,
+    }
+
+if __name__ == "__main__":
+    import time
+    import seaborn as sns
+    import uci_dataset as dataset
+    from KNN_adapters import (
+        EuclideanKNN, GowerKNN, REX_KNN,
+        EuclideanKNN_OneHot, HeomKNN, GeneralisedEuclideanKNN, HvdmKNN
+    )
+
+    OVERWRITE = True
+    results_file = '01_knn_cls_results.csv'
+
+    datasets = {
+        'autism' : (dataset.load_autism_screening(), "Class/ASD"),
+        'balance_scale' : (uci_dataset_id_import(12), "class"),
+        'breast_cancer': (dataset.load_breast_cancer(), "Class"),
+        'cardiotocography': (dataset.load_cardiotocography(), "NSP"),
+        'cervical_cancer': (dataset.load_cervical_cancer(), "Biopsy"),
+        'credit_approval': (dataset.load_credit_approval(), "A16"),
+        'cylinder_bands': (dataset.load_cylinder_bands(), "band type"),
+        'dermatology': (dataset.load_dermatology(), "class"),
+        'diabetic_retino': (dataset.load_diabetic(), "Class"),
+        'early_diabetes': (dataset.load_early_stage_diabetes_risk(), "class"),
+        'fertility': (dataset.load_fertility(), "Diagnosis"),
+        # 'hepatocellular': (dataset.load_hcc_survival(), "Class"),
+        # 'haberman': (dataset.load_haberman(), "survival"),
+        'glass' : (uci_dataset_id_import(42), "class"),
+        'german_credit' : (uci_dataset_id_import(144), "class"),
+        'hayes_roth': (dataset.load_hayes_roth(), "class"),
+        # 'hcc_survival': (dataset.load_hcc_survival(), "Class"),
+        'hepatitis_values': (dataset.load_hcv(), "Category"),
+        'heart': (uci_dataset_id_import(145), 'class'),
+        'heart_disease': (dataset.load_heart_disease(), "target"),
+        'hepatitis': (dataset.load_hepatitis(), "Class"),
+        'indian_liver': (dataset.load_indian_liver(), "Selector"),
+        'iris': (sns.load_dataset('iris'), "species"),
+        'liver_disorder': (dataset.load_liver_disorders(), "selector"),
+        'lymphography': (dataset.load_lymphography(), "class"),
+        'mammographic': (uci_dataset_id_import(161), "class"),
+        # 'mushroom': (uci_dataset_id_import(73), "class"),
+        'obesity_levels': (uci_dataset_id_import(544), "class"),
+        'parkinsons': (dataset.load_parkinson(), "status"),
+        'penguins': (sns.load_dataset('penguins'), "species"),
+        'soy_bean': (uci_dataset_id_import(90), "class"),
+        'student_performance': (uci_dataset_id_import(856), "class"),
+        # 'primary_tumor': (dataset.load_primary_tumor(), "class"),
+        # 'titanic': (sns.load_dataset('titanic'), "survived"),
+        'thoracic_surgery': (dataset.load_thoracic_surgery(), "Risk1Yr"),
+        'wisconsin_bc' : (dataset.load_breast_cancer_wis_diag(), "diagnosis"),
+    }
+
+    experiments = {
+        'L2': EuclideanKNN,
+        'L2_OHE': EuclideanKNN_OneHot,
+        'HEOM': HeomKNN,
+        'HVDM': HvdmKNN,
+        'GEM' : GeneralisedEuclideanKNN,
+        'REX': REX_KNN,
+        'Gower': GowerKNN,
+    }
+
+    for dataset_name, (df, label) in datasets.items():
+        df, cat_cols, type = preprocess_data(df, label)
+        df_tuple = (df, dataset_name)
+
+        for exp_name, method in experiments.items():
+            time_start = time.time()
+            results = run_experiment(df_tuple, method, random_state=42)
+            time_end = time.time()
+            print(f"Time taken: {time_end - time_start:.2f} seconds")
+            
+            results['type'] = type
+
+            # Save results to CSV
+            results_df = pd.DataFrame([results])
+            if OVERWRITE or not os.path.exists(results_file):
+                results_df.to_csv(results_file, mode='w', index=False)
+                OVERWRITE = False
+            else:
+                results_df.to_csv(results_file, mode='a', header=False, index=False)
