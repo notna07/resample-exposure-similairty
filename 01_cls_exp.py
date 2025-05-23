@@ -67,20 +67,20 @@ def run_experiment(df_tuple: Tuple[DataFrame, str], KNN_method: KNNAdapter, best
     k_max = min(int(np.ceil(2.0*min_items/3.0)), 21)
 
     # Use cross-validation to find the best k if not provided
-    if best_k is None:
-        grid = np.arange(1, k_max)
-        group_kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
+    # if best_k is None:
+    #     grid = np.arange(1, k_max)
+    #     group_kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
 
-        results = Parallel(n_jobs=1)(
-            delayed(run_cross_validation)(X_train, y_train, KNN_method, group_kfold, k) for k in grid
-        )
-        avg_scores_lst, std_scores_lst = [result[0] for result in results], [result[1] for result in results]
+    #     results = Parallel(n_jobs=1)(
+    #         delayed(run_cross_validation)(X_train, y_train, KNN_method, group_kfold, k) for k in grid
+    #     )
+    #     avg_scores_lst, std_scores_lst = [result[0] for result in results], [result[1] for result in results]
 
-        best_k = grid[np.argmin(avg_scores_lst)]
+    #     best_k = grid[np.argmin(avg_scores_lst)]
 
-        plot_cross_validation_results(df_name, exp_name, grid, avg_scores_lst, std_scores_lst, var_name='Error rate')
+    #     plot_cross_validation_results(df_name, exp_name, grid, avg_scores_lst, std_scores_lst, var_name='Error rate')
 
-    # best_k = (np.sqrt(len(X_train))/2).astype(int)
+    best_k = (np.sqrt(len(X_train))/2).astype(int)
     knn_model = KNN_method(n_neighbors=best_k)
     knn_model.fit_cls(X_train, y_train)
 
@@ -121,7 +121,7 @@ if __name__ == "__main__":
         'autism' : (dataset.load_autism_screening(), "Class/ASD"),
         'balance_scale' : (uci_dataset_id_import(12), "class"),
         'breast_cancer': (dataset.load_breast_cancer(), "Class"),
-        'cardiotocography': (dataset.load_cardiotocography(), "NSP"),
+        # 'cardiotocography': (dataset.load_cardiotocography(), "NSP"),
         'cervical_cancer': (dataset.load_cervical_cancer(), "Biopsy"),
         'credit_approval': (dataset.load_credit_approval(), "A16"),
         'cylinder_bands': (dataset.load_cylinder_bands(), "band type"),
@@ -159,9 +159,9 @@ if __name__ == "__main__":
     experiments = {
         'L2': EuclideanKNN,
         'L2_OHE': EuclideanKNN_OneHot,
-        # 'HEOM': HeomKNN,
-        # 'HVDM': HvdmKNN,
-        # 'GEM' : GeneralisedEuclideanKNN,
+        'HEOM': HeomKNN,
+        'HVDM': HvdmKNN,
+        'GEM' : GeneralisedEuclideanKNN,
         'REX': REX_KNN,
         'Gower': GowerKNN,
     }
