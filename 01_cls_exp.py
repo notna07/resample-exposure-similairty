@@ -159,9 +159,9 @@ if __name__ == "__main__":
     experiments = {
         'L2': EuclideanKNN,
         'L2_OHE': EuclideanKNN_OneHot,
-        'HEOM': HeomKNN,
-        'HVDM': HvdmKNN,
-        'GEM' : GeneralisedEuclideanKNN,
+        # 'HEOM': HeomKNN,
+        # 'HVDM': HvdmKNN,
+        # 'GEM' : GeneralisedEuclideanKNN,
         'REX': REX_KNN,
         'Gower': GowerKNN,
     }
@@ -175,7 +175,7 @@ if __name__ == "__main__":
             results = run_experiment(df_tuple, method, random_state=42)
             time_end = time.time()
             print(f"Time taken: {time_end - time_start:.2f} seconds")
-            
+            # print(results)
             results['type'] = type
 
             # Save results to CSV

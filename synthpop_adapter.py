@@ -9,6 +9,8 @@ import pandas as pd
 from typing import List
 from pandas import DataFrame
 
+from stat import S_IWUSR, S_IREAD # Need to add this import to the ones above
+
 def _load_data(file_name: str) -> DataFrame:
     df_train = pd.read_csv(file_name + '.csv').dropna()
     return df_train
@@ -52,7 +54,7 @@ def rSynthpop(train_data: str | DataFrame, num_to_generate: int = None, seed: in
 
     df_train = _load_data(train_data_name)
 
-    info_dir = 'synthesis_info_' + train_data_name.split('/')[0]
+    info_dir = 'synthesis_info_' + train_data_name#.split('/')[0]
     if not os.path.exists(info_dir):
         os.makedirs(info_dir)
 
@@ -73,5 +75,6 @@ def rSynthpop(train_data: str | DataFrame, num_to_generate: int = None, seed: in
                     train_data_name + '_synthpop.csv', 
                     f'synthpop_temp_{id}.csv'])
 
+    os.chmod(info_dir, S_IWUSR|S_IREAD)
     os.removedirs(info_dir)
     return df_syn
