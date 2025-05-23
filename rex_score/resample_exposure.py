@@ -297,7 +297,7 @@ class ResampleExposure:
             original_height_diff = self.height_diff.copy()
             original_setup_done = self._setup_done
 
-            self.memorised_distribution = _processed_query_df.copy()
+            # self.memorised_distribution = _processed_query_df.copy()
             
             detected_cat_features_overwrite = get_cat_variables(self.memorised_distribution, self.unique_threshold)
             # Respect original categorical_features if they were explicitly provided and still exist
