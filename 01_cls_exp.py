@@ -13,7 +13,7 @@ from pandas import DataFrame, Series
 from typing import Dict, Tuple
 
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score, balanced_accuracy_score
 
 from sklearn.model_selection import StratifiedKFold, KFold
 
@@ -63,8 +63,38 @@ def run_experiment(df_tuple: Tuple[DataFrame, str], KNN_method: KNNAdapter, best
     X, y = df.drop(columns=['class']), df['class']
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state, stratify=y)
  
-    min_items = y_train.value_counts().min()
-    k_max = min(int(np.ceil(2.0*min_items/3.0)), 21)
+    best_k = (np.sqrt(len(X_train))/2).astype(int)
+
+    group_kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
+
+    knn_model = KNN_method(n_neighbors=best_k)
+
+    accuracy_scores, precision_scores, recall_scores, f1_scores, error_rates, roc_auc_scores = [], [], [], [], [], []
+    for train_index, test_index in group_kfold.split(X, y):
+        X_train_fold, X_test_fold = X.iloc[train_index], X.iloc[test_index]
+        y_train_fold, y_test_fold = y.iloc[train_index], y.iloc[test_index]
+
+        knn_model.fit_cls(X_train_fold, y_train_fold)
+        y_pred = knn_model.predict(X_test_fold)
+        y_score = knn_model.predict_proba(X_test_fold)
+
+        accuracy = balanced_accuracy_score(y_test_fold, y_pred)
+        precision = precision_score(y_test_fold, y_pred, average='weighted', zero_division=0)
+        recall = recall_score(y_test_fold, y_pred, average='weighted')
+        f1 = f1_score(y_test_fold, y_pred, average='weighted')
+        err = 1 - np.mean(y_pred != y_test_fold)
+        # update y_test to have the same format as y_score for roc_auc_score
+        if len(y_test_fold.shape) == 1:
+            y_test_fold_dummies = pd.get_dummies(y_test_fold)
+            y_test_fold = y_test_fold_dummies.values
+        roc_auc = roc_auc_score(y_test_fold, y_score, multi_class='ovr', average='weighted')
+        
+        accuracy_scores.append(accuracy)
+        precision_scores.append(precision)
+        recall_scores.append(recall)
+        f1_scores.append(f1)
+        error_rates.append(err)
+        roc_auc_scores.append(roc_auc)
 
     # Use cross-validation to find the best k if not provided
     # if best_k is None:
@@ -80,38 +110,44 @@ def run_experiment(df_tuple: Tuple[DataFrame, str], KNN_method: KNNAdapter, best
 
     #     plot_cross_validation_results(df_name, exp_name, grid, avg_scores_lst, std_scores_lst, var_name='Error rate')
 
-    best_k = (np.sqrt(len(X_train))/2).astype(int)
-    knn_model = KNN_method(n_neighbors=best_k)
-    knn_model.fit_cls(X_train, y_train)
+    # knn_model = KNN_method(n_neighbors=best_k)
+    # knn_model.fit_cls(X_train, y_train)
 
     # Make predictions
-    y_pred = knn_model.predict(X_test)
-    y_score = knn_model.predict_proba(X_test)
+    # y_pred = knn_model.predict(X_test)
+    # y_score = knn_model.predict_proba(X_test)
     
     # Calculate metrics
-    accuracy = accuracy_score(y_test, y_pred)
-    precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
-    recall = recall_score(y_test, y_pred, average='weighted')
-    f1 = f1_score(y_test, y_pred, average='weighted')
+    # accuracy = balanced_accuracy_score(y_test, y_pred)
+    # precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+    # recall = recall_score(y_test, y_pred, average='weighted')
+    # f1 = f1_score(y_test, y_pred, average='weighted')
+    # err = 1-np.mean(y_pred != y_test)
 
-    # update y_test to have the same format as y_score for roc_auc_score
-    if len(y_test.shape) == 1:
-        y_test_dummies = pd.get_dummies(y_test)
-        y_test = y_test_dummies.values
+    # # update y_test to have the same format as y_score for roc_auc_score
+    # if len(y_test.shape) == 1:
+    #     y_test_dummies = pd.get_dummies(y_test)
+    #     y_test = y_test_dummies.values
 
-    print
-    roc_auc = roc_auc_score(y_test, y_score, multi_class='ovr', average='weighted')
+    # roc_auc = roc_auc_score(y_test, y_score, multi_class='ovr', average='weighted')
     
     return {
         'method': exp_name,
         'test_size': test_size,
         'df_name': df_name,
         'best_k': best_k,
-        'accuracy': accuracy,
-        'precision': precision,
-        'recall': recall,
-        'f1_score': f1,
-        'roc_auc': roc_auc,
+        'accuracy': np.mean(accuracy_scores),
+        'accuracy_std': np.std(accuracy_scores, ddof=1),
+        'precision': np.mean(precision_scores),
+        'precision_std': np.std(precision_scores, ddof=1),
+        'recall': np.mean(recall_scores),
+        'recall_std': np.std(recall_scores, ddof=1),
+        'f1_score': np.mean(f1_scores),
+        'f1_score_std': np.std(f1_scores, ddof=1),
+        'error_rate': np.mean(error_rates),
+        'error_rate_std': np.std(error_rates, ddof=1),
+        'roc_auc': np.mean(roc_auc_scores),
+        'roc_auc_std': np.std(roc_auc_scores, ddof=1),
         'seed': random_state,
     }
 
