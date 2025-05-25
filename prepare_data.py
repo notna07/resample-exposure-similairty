@@ -73,6 +73,14 @@ def _clean_up_data(df: DataFrame, label: str) -> DataFrame:
     df = df.rename(columns={label: 'class'})
     return df
 
+def _remove_severly_underrepresented_classes(df: DataFrame, min_samples: int = 3) -> DataFrame:
+    """ Remove class instances with fewer than a specified number of samples. """
+    class_counts = df['class'].value_counts()
+    classes_to_remove = class_counts[class_counts < min_samples].index
+    if len(classes_to_remove) > 0:
+        df = df[~df['class'].isin(classes_to_remove)]
+    return df
+
 def preprocess_data(df: DataFrame, label: str) -> Tuple[DataFrame, List[str], str]:
     """ Clean the dataset by removing rows with missing values. """
     cat_feats = get_categorical_features(df)
@@ -80,6 +88,7 @@ def preprocess_data(df: DataFrame, label: str) -> Tuple[DataFrame, List[str], st
     df = encode_categorical_features(df, cat_feats)
     df = _standardise_numerical_features(df, cat_feats)
     df = _clean_up_data(df, label)
+    df = _remove_severly_underrepresented_classes(df)
     return df, cat_feats, metadata
 
 def scott_ref_rule(samples: List[float]) -> List[float]:

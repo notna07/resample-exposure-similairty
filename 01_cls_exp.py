@@ -13,7 +13,7 @@ from pandas import DataFrame, Series
 from typing import Dict, Tuple
 
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
 
 from sklearn.model_selection import StratifiedKFold, KFold
 
@@ -86,12 +86,21 @@ def run_experiment(df_tuple: Tuple[DataFrame, str], KNN_method: KNNAdapter, best
 
     # Make predictions
     y_pred = knn_model.predict(X_test)
+    y_score = knn_model.predict_proba(X_test)
     
     # Calculate metrics
     accuracy = accuracy_score(y_test, y_pred)
-    precision = precision_score(y_test, y_pred, average='weighted')
+    precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
     recall = recall_score(y_test, y_pred, average='weighted')
     f1 = f1_score(y_test, y_pred, average='weighted')
+
+    # update y_test to have the same format as y_score for roc_auc_score
+    if len(y_test.shape) == 1:
+        y_test_dummies = pd.get_dummies(y_test)
+        y_test = y_test_dummies.values
+
+    print
+    roc_auc = roc_auc_score(y_test, y_score, multi_class='ovr', average='weighted')
     
     return {
         'method': exp_name,
@@ -102,6 +111,7 @@ def run_experiment(df_tuple: Tuple[DataFrame, str], KNN_method: KNNAdapter, best
         'precision': precision,
         'recall': recall,
         'f1_score': f1,
+        'roc_auc': roc_auc,
         'seed': random_state,
     }
 
@@ -159,11 +169,11 @@ if __name__ == "__main__":
     experiments = {
         'L2': EuclideanKNN,
         'L2_OHE': EuclideanKNN_OneHot,
+        'Gower': GowerKNN,
         'HEOM': HeomKNN,
         'HVDM': HvdmKNN,
         'GEM' : GeneralisedEuclideanKNN,
         'REX': REX_KNN,
-        'Gower': GowerKNN,
     }
 
     for dataset_name, (df, label) in datasets.items():

@@ -29,6 +29,9 @@ class KNNAdapter(ABC):
     def predict(self, X):
         pass
 
+    def predict_proba(self, X):
+        raise NotImplementedError("This method is not implemented in the base class.")
+
     def fit_nn(self, X):
         pass
     
@@ -55,6 +58,9 @@ class EuclideanKNN(KNNAdapter):
 
     def predict(self, X):
         return self.cls_model.predict(X)
+    
+    def predict_proba(self, X):
+        return self.cls_model.predict_proba(X)
 
     def get_neighbors(self, X, n_neighbors: int = 5):
         dists, neighbors = self.nn_model.kneighbors(X, n_neighbors, return_distance=True)
@@ -98,6 +104,12 @@ class EuclideanKNN_OneHot(KNNAdapter):
         X = np.hstack((X.drop(columns=self.cat_cols).values, X_encoded.toarray()))
         return self.cls_model.predict(X)
     
+    def predict_proba(self, X):
+        # One-hot encode categorical features
+        X_encoded = self.cls_encoder.transform(X[self.cat_cols])
+        X = np.hstack((X.drop(columns=self.cat_cols).values, X_encoded.toarray()))
+        return self.cls_model.predict_proba(X)
+    
     def get_neighbors(self, X, n_neighbors: int = 5):
         X_encoded = self.nn_encoder.transform(X[self.cat_cols])
         X = np.hstack((X.drop(columns=self.cat_cols).values, X_encoded.toarray()))
@@ -135,6 +147,11 @@ class REX_KNN(KNNAdapter):
         rex_test = self.REX.resample_exposure_matrix(X, True, reverse_direction=True)
         rex_test = np.abs(np.ones_like(rex_test) - rex_test).T
         return self.cls_model.predict(rex_test)
+    
+    def predict_proba(self, X):
+        rex_test = self.REX.resample_exposure_matrix(X, True, reverse_direction=True)
+        rex_test = np.abs(np.ones_like(rex_test) - rex_test).T
+        return self.cls_model.predict_proba(rex_test)
     
     def get_neighbors(self, X, n_neighbors: int = 5):
         rex_test = self.REX.resample_exposure_matrix(X, True, overwrite_memory=True)
@@ -182,7 +199,7 @@ class GowerKNN(KNNAdapter):
         self.nn_model = NearestNeighbors(metric='precomputed')
 
     def name() -> str:
-        return "Gower"
+        return "GOW"
     
     def fit_cls(self, X, y):
         self.memory = X
@@ -197,6 +214,10 @@ class GowerKNN(KNNAdapter):
     def predict(self, X):
         gower_test = gower.gower_matrix(X, self.memory)
         return self.cls_model.predict(gower_test)
+    
+    def predict_proba(self, X):
+        gower_test = gower.gower_matrix(X, self.memory)
+        return self.cls_model.predict_proba(gower_test)
     
     def get_neighbors(self, X, n_neighbors: int = 5):
         gower_test = gower.gower_matrix(X, self.memory)
@@ -287,6 +308,10 @@ class HeomKNN(KNNAdapter):
         heom_test = heom_distance_matrix(X, self.memory)
         return self.cls_model.predict(heom_test)
     
+    def predict_proba(self, X):
+        heom_test = heom_distance_matrix(X, self.memory)
+        return self.cls_model.predict_proba(heom_test)
+    
     def get_neighbors(self, X, n_neighbors: int = 5):
         heom_test = heom_distance_matrix(X, self.memory)
         dists, neighbors = self.nn_model.kneighbors(heom_test, n_neighbors, return_distance=True)
@@ -317,6 +342,10 @@ class GeneralisedEuclideanKNN(KNNAdapter):
     def predict(self, X):
         gem_test = ichino_yaguchi_distance_matrix(X, self.memory)
         return self.cls_model.predict(gem_test)
+    
+    def predict_proba(self, X):
+        gem_test = ichino_yaguchi_distance_matrix(X, self.memory)
+        return self.cls_model.predict_proba(gem_test)
     
     def get_neighbors(self, X, n_neighbors: int = 5):
         gem_test = ichino_yaguchi_distance_matrix(X, self.memory)
@@ -351,4 +380,16 @@ class HvdmKNN(KNNAdapter):
             class_values=class_values
         )
         return self.cls_model.predict(hvdm_test)
+    
+    def predict_proba(self, X):
+        vdm_probs, std_dict, cat_features, num_features, class_values = compute_vdm_tables(self.memory[0], self.memory[1])
+        hvdm_test = hvdm_distance_matrix(
+            X, Y=self.memory[0],
+            vdm_probs_np_lookup=vdm_probs,
+            std_dict=std_dict,
+            cat_feature_names=cat_features,
+            num_feature_names=num_features,
+            class_values=class_values
+        )
+        return self.cls_model.predict_proba(hvdm_test)
     

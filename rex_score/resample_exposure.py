@@ -139,7 +139,7 @@ class ResampleExposure:
                 height_diffs = np.diff(bin_heights)
                 left_to_right_height_diffs = height_diffs[height_diffs > 0]
                 right_to_left_height_diffs = height_diffs[height_diffs < 0]
-                height_diff[col] = (np.sum(left_to_right_height_diffs), np.sum(right_to_left_height_diffs))
+                height_diff[col] = (np.sum(np.abs(left_to_right_height_diffs)), np.sum(np.abs(right_to_left_height_diffs)))
             else:
                 height_diff[col] = (0.0, 0.0)
         return height_diff
@@ -222,7 +222,7 @@ class ResampleExposure:
 
             diff_num = query_point[col] - target_point[col]
 
-            height_key = 1 if diff_num < 0 else 0
+            height_key = 0 if diff_num < 0 else 1
                 
             with np.errstate(divide='ignore', invalid='ignore'):
                 sim = (1 - (abs(diff_num) / self.numerical_ranges[col])) * (1-(neg_descent/self.height_diff[col][height_key]))
@@ -421,7 +421,6 @@ class ResampleExposure:
                     current_bin_ranges = self.bin_ranges[col_name]
                     current_histogram = self.histograms[col_name] # Used for target_bin_index check
                     current_height_diff_tuple = self.height_diff[col_name]
-                    
                     precomputed_descent_matrix_col = all_neg_descent_matrices[col_name]
                     num_bins_for_col_runtime = len(current_histogram)
 
@@ -449,13 +448,12 @@ class ResampleExposure:
                                 neg_descent_scalar = precomputed_descent_matrix_col[bin_idx_q_clipped, bin_idx_t_clipped]
                             
 
-                            height_key_scalar = 1 if diff_num_scalar < 0 else 0
+                            height_key_scalar = 0 if diff_num_scalar < 0 else 1
                             
                             with np.errstate(divide='ignore', invalid='ignore'):
                                 term1 = (1.0 - (abs(diff_num_scalar) / current_feature_range))
                                 term2_numerator = neg_descent_scalar
                                 term2_denominator = current_height_diff_tuple[height_key_scalar]
-                                
 
                                 if term2_denominator == 0: # Avoid 0/0 or x/0 if neg_descent is also 0 or non-zero
                                     term2 = 1.0 if term2_numerator == 0 else 0.0 # if descent is 0, factor is 1. If descent non-0 and max_descent 0, factor is 0.
