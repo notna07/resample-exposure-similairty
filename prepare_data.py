@@ -73,7 +73,7 @@ def _clean_up_data(df: DataFrame, label: str) -> DataFrame:
     df = df.rename(columns={label: 'class'})
     return df
 
-def _remove_severly_underrepresented_classes(df: DataFrame, min_samples: int = 3) -> DataFrame:
+def _remove_severly_underrepresented_classes(df: DataFrame, min_samples: int = 5) -> DataFrame:
     """ Remove class instances with fewer than a specified number of samples. """
     class_counts = df['class'].value_counts()
     classes_to_remove = class_counts[class_counts < min_samples].index

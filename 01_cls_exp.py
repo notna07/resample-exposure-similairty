@@ -61,9 +61,9 @@ def run_experiment(df_tuple: Tuple[DataFrame, str], KNN_method: KNNAdapter, best
     exp_name = KNN_method.name()
 
     X, y = df.drop(columns=['class']), df['class']
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state, stratify=y)
+    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state, stratify=y)
  
-    best_k = (np.sqrt(len(X_train))/2).astype(int)
+    best_k = (np.sqrt(len(X))/2).astype(int)
 
     group_kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
 
@@ -83,10 +83,12 @@ def run_experiment(df_tuple: Tuple[DataFrame, str], KNN_method: KNNAdapter, best
         recall = recall_score(y_test_fold, y_pred, average='weighted')
         f1 = f1_score(y_test_fold, y_pred, average='weighted')
         err = 1 - np.mean(y_pred != y_test_fold)
+
         # update y_test to have the same format as y_score for roc_auc_score
         if len(y_test_fold.shape) == 1:
             y_test_fold_dummies = pd.get_dummies(y_test_fold)
             y_test_fold = y_test_fold_dummies.values
+
         roc_auc = roc_auc_score(y_test_fold, y_score, multi_class='ovr', average='weighted')
         
         accuracy_scores.append(accuracy)
@@ -157,7 +159,8 @@ if __name__ == "__main__":
     import uci_dataset as dataset
     from KNN_adapters import (
         EuclideanKNN, GowerKNN, REX_KNN,
-        EuclideanKNN_OneHot, HeomKNN, GeneralisedEuclideanKNN, HvdmKNN
+        EuclideanKNN_OneHot, HeomKNN, 
+        GeneralisedEuclideanKNN, HvdmKNN
     )
 
     OVERWRITE = True
@@ -181,7 +184,7 @@ if __name__ == "__main__":
         'german_credit' : (uci_dataset_id_import(144), "class"),
         'hayes_roth': (dataset.load_hayes_roth(), "class"),
         # 'hcc_survival': (dataset.load_hcc_survival(), "Class"),
-        'hepatitis_values': (dataset.load_hcv(), "Category"),
+        'hcv_values': (dataset.load_hcv(), "Category"),
         'heart': (uci_dataset_id_import(145), 'class'),
         'heart_disease': (dataset.load_heart_disease(), "target"),
         'hepatitis': (dataset.load_hepatitis(), "Class"),
