@@ -7,7 +7,7 @@
 import numpy as np
 
 from numpy import ndarray
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union # Added Union
 from pandas import DataFrame, Series
 
 from .utils.preprocessing import get_cat_variables, scott_ref_rule
@@ -17,7 +17,8 @@ class ResampleExposure:
 
     def __init__(self, target_distribution: DataFrame, 
                  categorical_features: List[str] = None, 
-                 unique_threshold: int = 10):
+                 unique_threshold: int = 10,
+                 feature_weights: Union[Dict[str, float], np.ndarray, List[float]] = None): # Added feature_weights
         """ Initialize the ResampleExposure with a memorised distribution.
 
         Arguments:
@@ -25,6 +26,10 @@ class ResampleExposure:
             - categorical_features (List[str]): List of categorical features in the dataset, 
                 if None the categorical features will be determined from the memorised distribution.
             - unique_threshold (int): Threshold for determining if a numerical feature is categorical.
+            - feature_weights (Union[Dict[str, float], np.ndarray, List[float]]): Weights for each feature.
+                If a dictionary, keys are feature names and values are weights.
+                If a NumPy array or list, it must be in the same order as target_distribution.columns.
+                If None, all features are weighted equally with 1.0.
         """
         self.memorised_distribution = target_distribution.copy()
         self.unique_threshold = unique_threshold # Store for potential use in overwrite_memory
@@ -36,6 +41,30 @@ class ResampleExposure:
             self.categorical_features = list(set(detected_cat_features) | set(categorical_features))
 
         self.numerical_features = [col for col in self.memorised_distribution.columns if col not in self.categorical_features]
+
+        # Initialize feature weights
+        all_columns = list(self.memorised_distribution.columns)
+        self.weights: Dict[str, float] = {}
+        if feature_weights is None:
+            self.weights = {col: 1.0 for col in all_columns}
+        elif isinstance(feature_weights, dict):
+            self.weights = {col: feature_weights.get(col, 1.0) for col in all_columns}
+            # Optional: Warn about keys in feature_weights not in all_columns
+            # for key in feature_weights:
+            #     if key not in self.weights:
+            #         print(f"Warning: Weight provided for feature '{key}' not present in target_distribution.")
+        elif isinstance(feature_weights, (np.ndarray, list)):
+            if len(feature_weights) != len(all_columns):
+                raise ValueError(
+                    "Length of feature_weights array/list must match the number of columns in target_distribution."
+                )
+            self.weights = {col: weight for col, weight in zip(all_columns, feature_weights)}
+        else:
+            raise TypeError(
+                "feature_weights must be a dictionary, numpy array, list, or None."
+            )
+        
+        self._setup_done = False # Ensure setup is marked as not done until _setup() completes
         self._setup()
         pass
 
@@ -86,6 +115,7 @@ class ResampleExposure:
         """ Infer the bin ranges for numerical features in the memorised distribution.
         Returns:
             - Dictionary with the bin ranges for each numerical feature.
+
         Example:
             >>> bin_ranges = resample_exposure_index._get_bin_ranges_of_numerical_features()
             >>> print(bin_ranges)
@@ -93,13 +123,7 @@ class ResampleExposure:
         """
         bin_ranges = {}
         for col in self.numerical_features:
-            if np.issubdtype(self.memorised_distribution[col].dtype, np.floating):
-                if self.memorised_distribution[col].nunique() > 1:
-                    bin_ranges[col] = scott_ref_rule(self.memorised_distribution[col])
-                else:
-                    bin_ranges[col] = [self.memorised_distribution[col].min(), self.memorised_distribution[col].max()]
-            else:
-                bin_ranges[col] = np.arange(self.memorised_distribution[col].min(), self.memorised_distribution[col].max() + 1)
+            bin_ranges[col] = scott_ref_rule(self.memorised_distribution[col])
         return bin_ranges
     
     def _get_histogram_of_numerical_features(self, bin_ranges: Dict[str, List[float]]) -> Dict[str, ndarray]:
@@ -186,7 +210,7 @@ class ResampleExposure:
         Arguments:
             - query_point (Series): A query point to compute the resample exposure index for.
             - target_point (Series): The target point in the memorised distribution to compare against.
-            - normalised (bool): If True, the resample exposure index will be normalised to [0, 1].
+            - normalised (bool): If True, the resample exposure index will be normalised by the sum of weights of active features.
 
         Returns:
             - resample exposure index (float): The resample exposure index for the query point to be made into the target point.
@@ -194,10 +218,11 @@ class ResampleExposure:
         Example:
             >>> query_point = pd.Series({'feature1': 1.0, 'feature2': 5.0})
             >>> target_point = pd.Series({'feature1': 2.0, 'feature2': 7.0})
-            >>> resample_exposure_index = ResampleExposure(memorised_distribution)
+            >>> feature_weights = {'feature1': 0.7, 'feature2': 0.3}
+            >>> resample_exposure_index = ResampleExposure(memorised_distribution, feature_weights=feature_weights)
             >>> index = resample_exposure_index.compute_resample_exposure_index(query_point, target_point)
             >>> print(index)
-            0.5
+            # Value will depend on weights and internal calculations
         """
         if not self._setup_done:
             raise ValueError("ResampleExposure is not set up. Call _setup() first.")
@@ -209,31 +234,62 @@ class ResampleExposure:
             raise ValueError("Query and target points must have the same columns.")
         
         resample_exposure_index = 0.0
+        feature_weight: float
 
         for col in self.categorical_features:
+            feature_weight = self.weights.get(col, 1.0) # Default to 1.0 if somehow not in weights
+            if feature_weight == 0: continue # Skip if weight is zero
+
             target = target_point[col]
             if query_point[col] != target:
-                resample_exposure_index += self.cat_counts[col].loc[target] if target in self.cat_counts[col].index else 0
+                resample_exposure_index += (self.cat_counts[col].loc[target] if target in self.cat_counts[col].index else 0) * feature_weight
             else:
-                resample_exposure_index += 1.0
+                resample_exposure_index += 1.0 * feature_weight
 
         for col in self.numerical_features:
+            feature_weight = self.weights.get(col, 1.0) # Default to 1.0 if somehow not in weights
+            if feature_weight == 0: continue # Skip if weight is zero
+
             neg_descent = self._get_height_of_histogram_descent(query_point[col], target_point[col], self.bin_ranges[col], self.histograms[col])
 
             diff_num = query_point[col] - target_point[col]
 
             height_key = 0 if diff_num < 0 else 1
                 
-            with np.errstate(divide='ignore', invalid='ignore'):
-                sim = (1 - (abs(diff_num) / self.numerical_ranges[col])) * (1-(neg_descent/self.height_diff[col][height_key]))
+            sim = 0.0 # Default similarity
+            if self.numerical_ranges[col] == 0: # Avoid division by zero if range is zero
+                if diff_num == 0: # If range is zero and values are same, similarity is 1
+                    sim = 1.0
+                else: # If range is zero and values differ, similarity is 0
+                    sim = 0.0
+            elif self.height_diff[col][height_key] == 0: # Avoid division by zero for height diff
+                 # If max descent is 0, second term is 1 if neg_descent is also 0, else 0
+                term1 = (1 - (abs(diff_num) / self.numerical_ranges[col]))
+                term2 = 1.0 if neg_descent == 0 else 0.0
+                sim = term1 * term2
+            else:
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    sim_val = (1 - (abs(diff_num) / self.numerical_ranges[col])) * (1-(neg_descent/self.height_diff[col][height_key]))
+                if np.isnan(sim_val): sim_val = 0.0 # Handle potential NaN from 0/0 if not caught by prior checks
+                sim = sim_val
+
 
             bin_index = np.digitize(target_point[col], self.bin_ranges[col]) - 1
             if bin_index < 0 or bin_index >= len(self.histograms[col]) or len(self.histograms[col]) == 0:
-                resample_exposure_index += 0.0
+                resample_exposure_index += 0.0 # No contribution if target is outside histogram bins
             else:
-                resample_exposure_index += sim #* self.histograms[col][bin_index] / sum(self.histograms[col])
+                resample_exposure_index += sim * feature_weight #* self.histograms[col][bin_index] / sum(self.histograms[col])
 
-        if normalised: resample_exposure_index /= len(self.categorical_features) + len(self.numerical_features)
+        if normalised:
+            active_features = self.categorical_features + self.numerical_features
+            sum_of_weights = sum(self.weights.get(f, 0.0) for f in active_features if self.weights.get(f, 0.0) > 0) # Sum of positive weights
+            
+            if sum_of_weights > 0:
+                resample_exposure_index /= sum_of_weights
+            elif resample_exposure_index == 0: # If sum_of_weights is 0 and index is 0, result is 0
+                resample_exposure_index = 0.0
+            else: # sum_of_weights is 0 (or negative, though weights assumed non-negative) but index isn't.
+                resample_exposure_index = np.nan # Or 0.0, depending on desired behavior for 0 sum of weights.
         return resample_exposure_index
     
     def resample_exposure_matrix(self, query_df: DataFrame = None, normalised: bool = False, 
@@ -396,9 +452,12 @@ class ResampleExposure:
                 query_cat_row_vals = eq_cat_values_all[i, :] 
                 matches = (query_cat_row_vals == et_cat_values_for_comp)
                 cat_contribution_per_target = np.zeros(num_effective_target_rows)
-                for k_cat in range(len(self.categorical_features)):
+                for k_cat, col_name in enumerate(self.categorical_features):
+                    feature_weight = self.weights.get(col_name, 1.0)
+                    if feature_weight == 0: continue
+
                     feature_k_cat_scores = np.where(matches[:, k_cat], 1.0, cat_probs_for_effective_targets[:, k_cat])
-                    cat_contribution_per_target += feature_k_cat_scores
+                    cat_contribution_per_target += feature_k_cat_scores * feature_weight
                 current_query_total_score_vs_all_targets += cat_contribution_per_target
 
             if self.numerical_features and num_effective_target_rows > 0:
@@ -406,6 +465,9 @@ class ResampleExposure:
                 num_contribution_per_target_for_query_i = np.zeros(num_effective_target_rows)
 
                 for k_num, col_name in enumerate(self.numerical_features):
+                    feature_weight = self.weights.get(col_name, 1.0)
+                    if feature_weight == 0: continue
+                    
                     if col_name not in self.numerical_ranges or \
                        col_name not in self.bin_ranges or \
                        col_name not in self.histograms or \
@@ -455,7 +517,7 @@ class ResampleExposure:
                                 term2_numerator = neg_descent_scalar
                                 term2_denominator = current_height_diff_tuple[height_key_scalar]
 
-                                if term2_denominator == 0: # Avoid 0/0 or x/0 if neg_descent is also 0 or non-zero
+                                if term2_denominator == 0: # Avoid 0/0 or x/0 if neg_descent is also 0 or non-0
                                     term2 = 1.0 if term2_numerator == 0 else 0.0 # if descent is 0, factor is 1. If descent non-0 and max_descent 0, factor is 0.
                                 else:
                                     term2 = (1.0 - (term2_numerator / term2_denominator))
@@ -471,9 +533,8 @@ class ResampleExposure:
                             scores_for_current_feature_all_targets[j_target] = sim_for_feature_target_pair
                     
 
-                    num_contribution_per_target_for_query_i += scores_for_current_feature_all_targets
+                    num_contribution_per_target_for_query_i += scores_for_current_feature_all_targets * feature_weight # Apply weight here
                 current_query_total_score_vs_all_targets += num_contribution_per_target_for_query_i
-            
             result_matrix[i, :] = current_query_total_score_vs_all_targets
 
         if overwrite_memory and original_memorised_distribution is not None:
@@ -488,8 +549,16 @@ class ResampleExposure:
             self._setup_done = original_setup_done # Restore setup status
 
         if normalised:
-            num_total_features = len(self.categorical_features) + len(self.numerical_features)
-            if num_total_features > 0:
-                result_matrix /= num_total_features
+            # Use features from the perspective of the 'self' object, which defines the weights
+            active_features_for_norm = self.categorical_features + self.numerical_features
+            sum_of_weights = sum(self.weights.get(f, 0.0) for f in active_features_for_norm if self.weights.get(f, 0.0) > 0)
+
+            if sum_of_weights > 0:
+                result_matrix /= sum_of_weights
+            else: # If sum_of_weights is 0, set matrix to 0 or NaN if it's not already 0
+                  # Assuming if sum_of_weights is 0, all contributions should be 0.
+                  # If result_matrix contains non-zero values, it implies an issue or negative weights.
+                result_matrix[result_matrix != 0] = np.nan # Or set all to 0: result_matrix.fill(0.0)
+                result_matrix[np.isclose(result_matrix, 0)] = 0.0 # Ensure zeros stay zero
         
         return result_matrix
