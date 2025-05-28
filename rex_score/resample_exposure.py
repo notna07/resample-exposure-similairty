@@ -384,17 +384,27 @@ class ResampleExposure:
             current_bin_ranges = self.bin_ranges
             current_histograms = self.histograms
             current_height_diff = self.height_diff
+            # current_memorised_distribution_for_setup is updated to the new self.memorised_distribution (which is _processed_query_df)
             current_memorised_distribution_for_setup = self.memorised_distribution
 
 
         effective_query_df: DataFrame
         effective_target_df: DataFrame
 
+        # Determine the actual DataFrames for comparison.
+        # If overwrite_memory is True, statistics are derived from _processed_query_df,
+        # but the "memorised" component of the comparison should be the *original* memorised_distribution.
+        memorised_component_for_comparison: DataFrame
+        if overwrite_memory:
+            memorised_component_for_comparison = original_memorised_distribution
+        else:
+            memorised_component_for_comparison = self.memorised_distribution # This is current_memorised_distribution_for_setup if not overwritten
+
         if not reverse_direction:
             effective_query_df = _processed_query_df
-            effective_target_df = current_memorised_distribution_for_setup # Uses original or overwritten memorised_distribution
+            effective_target_df = memorised_component_for_comparison
         else: 
-            effective_query_df = current_memorised_distribution_for_setup # Uses original or overwritten memorised_distribution
+            effective_query_df = memorised_component_for_comparison
             effective_target_df = _processed_query_df
             
         num_effective_query_rows = len(effective_query_df)
@@ -493,6 +503,7 @@ class ResampleExposure:
                     feature_weight = current_weights.get(col_name, 1.0)
                     if feature_weight == 0: continue
                     
+
                     if col_name not in current_numerical_ranges or \
                        col_name not in current_bin_ranges or \
                        col_name not in current_histograms or \
@@ -514,6 +525,7 @@ class ResampleExposure:
                     # Vectorized calculation for all targets for this feature
                     diff_num_vector = q_val_scalar - target_vals_for_feature_k
                     
+
                     neg_descent_vector = np.zeros_like(target_vals_for_feature_k, dtype=float)
                     if num_bins_for_col_runtime > 0:
                         bin_idx_q_scalar_clipped = np.clip(np.digitize(q_val_scalar, current_bin_ranges_val) - 1, 0, num_bins_for_col_runtime - 1)
