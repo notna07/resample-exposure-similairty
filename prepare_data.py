@@ -33,6 +33,8 @@ def get_categorical_features(df: DataFrame, unique_threshold: int = 10) -> List[
     for col in df.columns:
         if df[col].dtype == "object":
             cat_variables.append(col)
+        elif df[col].dtype == "bool": # Add this condition to detect boolean types
+            cat_variables.append(col)
         elif (
             np.issubdtype(df[col].dtype, np.integer) or np.issubdtype(df[col].dtype, np.floating)
         ) and df[col].nunique() < unique_threshold:
@@ -61,10 +63,15 @@ def _get_dataset_type(df: DataFrame, cat_feats: List[str]) -> str:
         return 'balanced'
     
 def _remove_index_columns(df: DataFrame) -> DataFrame:
-    """ Remove index columns from the DataFrame. """
+    """ Remove index columns from the DataFrame if the column name exactly matches an identifier (case-insensitively). """
     identifier_names = ['id', 'ID', 'Id', 'index', 'Unnamed: 0','timestamp', 'name','spread1','date']
-    index_cols = df.columns[df.columns.str.contains('|'.join(identifier_names), case=False)].tolist()
-    return df.drop(columns=index_cols)
+    # Create a set of lowercase identifiers for efficient lookup
+    identifier_names_lower = {name.lower() for name in identifier_names}
+    
+    # Identify columns to remove by checking for exact match (case-insensitive)
+    cols_to_remove = [col for col in df.columns if col.lower() in identifier_names_lower]
+    
+    return df.drop(columns=cols_to_remove)
 
 def _clean_up_data(df: DataFrame, label: str) -> DataFrame:
     """ Clean the dataset by removing rows with missing values. """
@@ -147,7 +154,7 @@ def scott_ref_rule(samples: List[float]) -> List[float]:
         N = int(N_candidate)
 
     N = max(1, N)  # Ensure N is at least 1.
-    N = min(N, 10000)  # Apply cap on the number of bins
+    N = min(N, 1000)  # Apply cap on the number of bins
     Nplus1 = N + 1
     
     return np.linspace(min_edge, max_edge, Nplus1)

@@ -98,41 +98,15 @@ def run_experiment(df_tuple: Tuple[DataFrame, str], KNN_method: KNNAdapter, best
         error_rates.append(err)
         roc_auc_scores.append(roc_auc)
 
-    # Use cross-validation to find the best k if not provided
-    # if best_k is None:
-    #     grid = np.arange(1, k_max)
-    #     group_kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=random_state)
+    #dataset size category
+    if len(X) < 100: data_size = 'small'
+    elif len(X) < 1000: data_size = 'medium'
+    else: data_size = 'large'
 
-    #     results = Parallel(n_jobs=1)(
-    #         delayed(run_cross_validation)(X_train, y_train, KNN_method, group_kfold, k) for k in grid
-    #     )
-    #     avg_scores_lst, std_scores_lst = [result[0] for result in results], [result[1] for result in results]
+    # cls size
+    if len(np.unique(y)) == 2: cls_task = 'binary'
+    else: cls_task = 'multi'
 
-    #     best_k = grid[np.argmin(avg_scores_lst)]
-
-    #     plot_cross_validation_results(df_name, exp_name, grid, avg_scores_lst, std_scores_lst, var_name='Error rate')
-
-    # knn_model = KNN_method(n_neighbors=best_k)
-    # knn_model.fit_cls(X_train, y_train)
-
-    # Make predictions
-    # y_pred = knn_model.predict(X_test)
-    # y_score = knn_model.predict_proba(X_test)
-    
-    # Calculate metrics
-    # accuracy = balanced_accuracy_score(y_test, y_pred)
-    # precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
-    # recall = recall_score(y_test, y_pred, average='weighted')
-    # f1 = f1_score(y_test, y_pred, average='weighted')
-    # err = 1-np.mean(y_pred != y_test)
-
-    # # update y_test to have the same format as y_score for roc_auc_score
-    # if len(y_test.shape) == 1:
-    #     y_test_dummies = pd.get_dummies(y_test)
-    #     y_test = y_test_dummies.values
-
-    # roc_auc = roc_auc_score(y_test, y_score, multi_class='ovr', average='weighted')
-    
     return {
         'method': exp_name,
         'test_size': test_size,
@@ -150,6 +124,8 @@ def run_experiment(df_tuple: Tuple[DataFrame, str], KNN_method: KNNAdapter, best
         'error_rate_std': np.std(error_rates, ddof=1),
         'roc_auc': np.mean(roc_auc_scores),
         'roc_auc_std': np.std(roc_auc_scores, ddof=1),
+        'data_size': data_size,
+        'cls_task': cls_task,
         'seed': random_state,
     }
 
@@ -163,27 +139,25 @@ if __name__ == "__main__":
         GeneralisedEuclideanKNN, HvdmKNN
     )
 
-    OVERWRITE = True
+    OVERWRITE = False
     results_file = '01_knn_cls_results.csv'
 
     datasets = {
         'autism' : (dataset.load_autism_screening(), "Class/ASD"),
         'balance_scale' : (uci_dataset_id_import(12), "class"),
         'breast_cancer': (dataset.load_breast_cancer(), "Class"),
-        # 'cardiotocography': (dataset.load_cardiotocography(), "NSP"),
         'cervical_cancer': (dataset.load_cervical_cancer(), "Biopsy"),
+        'cirrhosis': (uci_dataset_id_import(878), "class"),
         'credit_approval': (dataset.load_credit_approval(), "A16"),
         'cylinder_bands': (dataset.load_cylinder_bands(), "band type"),
         'dermatology': (dataset.load_dermatology(), "class"),
         'diabetic_retino': (dataset.load_diabetic(), "Class"),
         'early_diabetes': (dataset.load_early_stage_diabetes_risk(), "class"),
         'fertility': (dataset.load_fertility(), "Diagnosis"),
-        # 'hepatocellular': (dataset.load_hcc_survival(), "Class"),
-        # 'haberman': (dataset.load_haberman(), "survival"),
         'glass' : (uci_dataset_id_import(42), "class"),
         'german_credit' : (uci_dataset_id_import(144), "class"),
+        'haberman': (dataset.load_haberman(), "survival"),
         'hayes_roth': (dataset.load_hayes_roth(), "class"),
-        # 'hcc_survival': (dataset.load_hcc_survival(), "Class"),
         'hcv_values': (dataset.load_hcv(), "Category"),
         'heart': (uci_dataset_id_import(145), 'class'),
         'heart_disease': (dataset.load_heart_disease(), "target"),
@@ -191,17 +165,19 @@ if __name__ == "__main__":
         'indian_liver': (dataset.load_indian_liver(), "Selector"),
         'iris': (sns.load_dataset('iris'), "species"),
         'liver_disorder': (dataset.load_liver_disorders(), "selector"),
+        'kidney_disease': (uci_dataset_id_import(336), "class"),
         'lymphography': (dataset.load_lymphography(), "class"),
         'mammographic': (uci_dataset_id_import(161), "class"),
-        # 'mushroom': (uci_dataset_id_import(73), "class"),
+        'maternal': (uci_dataset_id_import(863), "class"),
+        'mushroom': (uci_dataset_id_import(73), "class"),
         'obesity_levels': (uci_dataset_id_import(544), "class"),
         'parkinsons': (dataset.load_parkinson(), "status"),
         'penguins': (sns.load_dataset('penguins'), "species"),
+        'raisin': (uci_dataset_id_import(850), "class"),
         'soy_bean': (uci_dataset_id_import(90), "class"),
         'student_performance': (uci_dataset_id_import(856), "class"),
-        # 'primary_tumor': (dataset.load_primary_tumor(), "class"),
-        # 'titanic': (sns.load_dataset('titanic'), "survived"),
         'thoracic_surgery': (dataset.load_thoracic_surgery(), "Risk1Yr"),
+        'voting' : (uci_dataset_id_import(105), "class"),
         'wisconsin_bc' : (dataset.load_breast_cancer_wis_diag(), "diagnosis"),
     }
 

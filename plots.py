@@ -46,3 +46,244 @@ def plot_distributions(df):
 
     plt.tight_layout()
     plt.show()
+
+
+import gower
+import numpy as np
+import pandas as pd
+
+from sklearn.decomposition import PCA
+from rex_score.resample_exposure import ResampleExposure
+
+def plot_multi_dataset_contour_comparison(datasets_dict, source_point_pca=[0, 0]):  
+    """ 
+    Plot contour maps of Euclidean distance, Gower distance, and Resample Exposure 
+    in PCA space for multiple datasets.
+
+    Args:
+        datasets_dict (dict): Dictionary where keys are dataset names (str) 
+                              and values are pandas DataFrames.
+        source_point_pca (list): Coordinates of the source point in 2D PCA space.
+    """
+    num_datasets = len(datasets_dict)
+    if num_datasets == 0:
+        print("No datasets provided.")
+        return
+
+    fig, axes = plt.subplots(nrows=num_datasets, ncols=3, 
+                             figsize=(9, 3 * num_datasets), # Adjust figsize as needed
+                             sharex=True, sharey=True)
+
+    # Ensure axes is always 2D for consistent indexing, even if num_datasets=1
+    if num_datasets == 1:
+        axes = axes.reshape(3, 1)
+
+    dataset_names = list(datasets_dict.keys())
+    metric_names = ["Euclidean Distance", "Gower Distance", "Resample Exposure"]
+
+    for row_idx, dataset_name in enumerate(dataset_names):
+        df = datasets_dict[dataset_name]
+        
+        pca = PCA(n_components=2)
+        X = df.select_dtypes(include=[np.number])
+
+        if X.shape[1] < 2:
+            print(f"Dataset '{dataset_name}' has fewer than 2 numeric features. Skipping PCA and plotting.")
+            for col_idx in range(3):
+                ax = axes[row_idx, col_idx]
+                ax.text(0.5, 0.5, f"{dataset_name}\n(Skipped)\nToo few numeric features", 
+                        horizontalalignment='center', verticalalignment='center', transform=ax.transAxes)
+                ax.axis('off')
+                if row_idx == 0: # Set metric name as title for skipped plots as well
+                    ax.set_title(metric_names[col_idx], fontsize=11)
+            continue
+        
+        X_std = (X - X.mean()) / X.std()
+        X_std.fillna(0, inplace=True) 
+        X_pca = pca.fit_transform(X_std)
+
+        x_lspace = np.linspace(-3.5, 3.5, 50)
+        y_lspace = np.linspace(-3.5, 3.5, 50)
+        X_grid_pca, Y_grid_pca = np.meshgrid(x_lspace, y_lspace)
+        grid_points_pca = np.c_[X_grid_pca.ravel(), Y_grid_pca.ravel()]
+
+        grid_points_original_space = pca.inverse_transform(grid_points_pca)
+        grid_df_original_space = pd.DataFrame(grid_points_original_space, columns=X.columns)
+        
+        source_point_original_space_array = pca.inverse_transform(np.array(source_point_pca).reshape(1, -1))
+        source_point_df_original_space = pd.DataFrame(source_point_original_space_array, columns=X.columns)
+
+        distances_euclidean = np.linalg.norm(grid_points_original_space - source_point_original_space_array, axis=1)
+        distance_grid_euclidean = distances_euclidean.reshape(X_grid_pca.shape)
+
+        gower_distances_val = gower.gower_matrix(source_point_df_original_space, grid_df_original_space)
+        gower_grid_val = gower_distances_val.reshape(X_grid_pca.shape)
+        
+        rex = ResampleExposure(X_std)
+        rex.memorised_distribution = grid_df_original_space
+        exposure_val_matrix = rex.resample_exposure_matrix(source_point_df_original_space, True)
+        exposure_val = 1 - exposure_val_matrix.ravel()
+        exposure_grid_val = exposure_val.reshape(X_grid_pca.shape)
+
+        plot_data_grids = [distance_grid_euclidean, gower_grid_val, exposure_grid_val]
+
+        for col_idx in range(3):
+            ax = axes[row_idx, col_idx]
+            ax.set_aspect('equal')
+            
+            sns.scatterplot(x=X_pca[:, 0], y=X_pca[:, 1], 
+                            hue=df.get('class'), 
+                            palette='tab10', s=50, ax=ax, legend=False)
+            
+            ax.scatter(source_point_pca[0], source_point_pca[1], color='red', s=200, marker='x')
+
+            data_grid = plot_data_grids[col_idx]
+            contour = ax.contour(X_grid_pca, Y_grid_pca, data_grid, levels=10, cmap='viridis', alpha=0.4)
+            ax.clabel(contour, contour.levels, fontsize=7)
+            ax.axis([-3.5, 3.5, -3.5, 3.5])
+
+            if row_idx == 0: # Top row: Metric name as title for the column
+                ax.set_title(metric_names[col_idx], fontsize=14)
+            
+            if col_idx == 0: # First column: Dataset name as Y-axis label
+                ax.set_ylabel(f"{dataset_name}\nPC2", fontsize=11)
+            
+            if row_idx == num_datasets - 1: # Bottom row: PC1 as X-axis label
+                ax.set_xlabel('PC1', fontsize=11)
+            
+            # Remove y-axis labels for plots not in the first column
+            if col_idx > 0:
+                ax.set_ylabel('')
+            
+            # Remove x-axis labels for plots not in the last row
+            if row_idx < num_datasets - 1:
+                ax.set_xlabel('')
+            
+            # Remove tick labels for inner plots to save space, if desired
+            if col_idx > 0:
+                ax.tick_params(axis='y', labelleft=False)
+            if row_idx < num_datasets - 1:
+                ax.tick_params(axis='x', labelbottom=False)
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.97]) 
+    plt.savefig("plots/contour_comparison.pdf", bbox_inches='tight')
+    pass
+
+def plot_multi_dataset_heatmap_comparison(datasets_dict: dict):
+    """
+    Plot heatmaps of Euclidean distance, Gower distance, and Resample Exposure 
+    in PCA space for multiple datasets. For each grid point in PCA space,
+    the metrics are calculated against the nearest point in the actual dataset.
+    
+    Args:
+        datasets_dict (dict): Dictionary where keys are dataset names (str) 
+                              and values are pandas DataFrames.
+    """
+    num_datasets = len(datasets_dict)
+    if num_datasets == 0:
+        print("No datasets provided.")
+        return
+
+    metric_names = ["Euclidean Distance", "Gower Distance", "Resample Exposure"]
+
+    fig, axes = plt.subplots(nrows=num_datasets, ncols=3,
+                             figsize=(9, 3 * num_datasets), # Adjusted figsize
+                             sharex=True, sharey=True)
+
+    if num_datasets == 1: # Ensure axes is 2D for consistent indexing
+        axes = axes.reshape(1, 3)
+
+    dataset_names = list(datasets_dict.keys())
+
+    for row_idx, dataset_name in enumerate(dataset_names):
+        df = datasets_dict[dataset_name]
+        
+        pca = PCA(n_components=2)
+        X = df.select_dtypes(include=[np.number])
+
+        if X.shape[1] < 2:
+            print(f"Dataset '{dataset_name}' has fewer than 2 numeric features. Skipping PCA and plotting.")
+            for col_idx in range(3):
+                ax = axes[row_idx, col_idx]
+                ax.text(0.5, 0.5, f"{dataset_name}\n(Skipped)\nToo few numeric features", 
+                        horizontalalignment='center', verticalalignment='center', transform=ax.transAxes)
+                ax.axis('off')
+                if row_idx == 0:
+                    ax.set_title(metric_names[col_idx], fontsize=11)
+            continue
+        
+        X_std = (X - X.mean()) / X.std()
+        X_std.fillna(0, inplace=True) # Handle potential NaNs from std=0 or original NaNs
+        X_pca = pca.fit_transform(X_std)
+
+        x_lspace = np.linspace(-3.5, 3.5, 30)
+        y_lspace = np.linspace(-3.5, 3.5, 30)
+        X_grid_pca, Y_grid_pca = np.meshgrid(x_lspace, y_lspace)
+        grid_points_pca = np.c_[X_grid_pca.ravel(), Y_grid_pca.ravel()]
+        grid_points_original_space = pca.inverse_transform(grid_points_pca)
+
+        rex = ResampleExposure(X_std) # Initialize with the dataset's standardized numeric features
+        
+        exposure_scores = np.zeros(grid_points_original_space.shape[0])
+        euclidean_distances_to_nearest = np.zeros(grid_points_original_space.shape[0])
+        gower_distances_to_nearest = np.zeros(grid_points_original_space.shape[0])
+
+        # X_std is already a DataFrame if X is.
+        # Ensure columns are available for creating point_df_orig_space
+        feature_columns = X.columns 
+
+        for i, point_orig_space_row in enumerate(grid_points_original_space):
+            point_df_orig_space = pd.DataFrame([point_orig_space_row], columns=feature_columns)
+            
+            # Calculate exposure of the grid point w.r.t. the dataset X_std
+            # Assuming resample_exposure_matrix calculates similarity, so 1 - similarity = exposure
+            # And memorized_distribution_is_grid=False means rex.memorised_distribution (X_std) is the reference dataset
+            exposure_scores[i] = np.min(1 - rex.resample_exposure_matrix(point_df_orig_space, False)) 
+            
+            # Euclidean distance from grid point to nearest point in X_std
+            euclidean_distances_to_nearest[i] = np.min(np.linalg.norm(X_std.values - point_df_orig_space.values, axis=1))
+            
+            # Gower distance from grid point to nearest point in X_std
+            gower_distances_to_nearest[i] = np.min(gower.gower_matrix(point_df_orig_space, X_std))
+
+        exposure_grid = exposure_scores.reshape(X_grid_pca.shape)
+        distance_grid = euclidean_distances_to_nearest.reshape(X_grid_pca.shape)
+        gower_grid = gower_distances_to_nearest.reshape(X_grid_pca.shape)
+
+        plot_data_grids = [distance_grid, gower_grid, exposure_grid]
+
+        for col_idx in range(3):
+            ax = axes[row_idx, col_idx]
+            ax.set_aspect('equal')
+            
+            sns.scatterplot(x=X_pca[:, 0], y=X_pca[:, 1], 
+                            hue=df.get('class'), # Use .get for safety if 'class' column might be missing
+                            palette='tab10', s=50, ax=ax, legend=False)
+            
+            data_grid_to_plot = plot_data_grids[col_idx]
+            ax.imshow(data_grid_to_plot, extent=(-3.5, 3.5, -3.5, 3.5), 
+                      origin='lower', cmap='magma', alpha=0.9, interpolation='bicubic')
+            
+            ax.axis([-3.5, 3.5, -3.5, 3.5])
+
+            if row_idx == 0:
+                ax.set_title(metric_names[col_idx], fontsize=14)
+            
+            if col_idx == 0:
+                ax.set_ylabel(f"{dataset_name}\nPC2", fontsize=11)
+            else:
+                ax.set_ylabel('')
+                ax.tick_params(axis='y', labelleft=False)
+            
+            if row_idx == num_datasets - 1:
+                ax.set_xlabel('PC1', fontsize=11)
+            else:
+                ax.set_xlabel('')
+                ax.tick_params(axis='x', labelbottom=False)
+
+            if ax.get_legend() is not None: # Remove scatterplot legend if it appears
+                ax.get_legend().remove()
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.97]) 
+    plt.savefig("plots/heatmap_comparison.pdf", bbox_inches='tight')
+    pass

@@ -41,10 +41,10 @@ class KNNAdapter(ABC):
 ### Concrete adapter for KNN with L2 distance
 from sklearn.neighbors import KNeighborsClassifier, NearestNeighbors
 class EuclideanKNN(KNNAdapter):
-    def __init__(self, n_neighbors: int = 5):
+    def __init__(self, n_neighbors: int = 5, weights: np.ndarray = None):
         self.n_neighbors = n_neighbors
-        self.cls_model = KNeighborsClassifier(n_neighbors, metric='euclidean')
-        self.nn_model = NearestNeighbors(metric='euclidean')
+        self.cls_model = KNeighborsClassifier(n_neighbors, metric_params={'w': weights} if weights is not None else None)
+        self.nn_model = NearestNeighbors(metric_params={'w': weights} if weights is not None else None)
         pass
 
     def name() -> str:
@@ -120,10 +120,11 @@ class EuclideanKNN_OneHot(KNNAdapter):
 ### REX distance metric
 from rex_score.resample_exposure import ResampleExposure
 class REX_KNN(KNNAdapter):
-    def __init__(self, n_neighbors: int = 5):
+    def __init__(self, n_neighbors: int = 5, weights: np.ndarray = None):
         self.n_neighbors = n_neighbors
         self.cls_model = KNeighborsClassifier(n_neighbors=n_neighbors, metric='precomputed')
         self.nn_model = NearestNeighbors(metric='precomputed')
+        self.weights = weights
         pass
 
     def name() -> str:
@@ -131,14 +132,14 @@ class REX_KNN(KNNAdapter):
     
     def fit_cls(self, X, y):
         self.memory = X
-        self.REX = ResampleExposure(X)
+        self.REX = ResampleExposure(X, feature_weights=self.weights)
         rex_train = self.REX.resample_exposure_matrix()
         rex_train = np.abs(np.ones_like(rex_train) - rex_train)
         self.cls_model.fit(rex_train, y)
 
     def fit_nn(self, X):
         self.memory = X
-        self.REX = ResampleExposure(X)
+        self.REX = ResampleExposure(X, feature_weights=self.weights)
         rex_train = self.REX.resample_exposure_matrix()
         rex_train = np.abs(np.ones_like(rex_train) - rex_train)
         self.nn_model.fit(rex_train)
@@ -159,68 +160,38 @@ class REX_KNN(KNNAdapter):
         dists, neighbors = self.nn_model.kneighbors(rex_test, n_neighbors, return_distance=True)
         return dists, neighbors
 
-### Own distance metric
-# from own_method import own_distance_matrix
-# class OwnKNN(KNNAdapter):
-#     def __init__(self, n_neighbors: int = 5):
-#         self.n_neighbors = n_neighbors
-#         self.cls_model = KNeighborsClassifier(n_neighbors=n_neighbors, metric='precomputed')
-#         self.nn_model = NearestNeighbors(metric='precomputed')
-#         pass
-
-#     def name() -> str:
-#         return "Ours"
-    
-#     def fit_cls(self, X, y):
-#         self.memory = X
-#         own_train = own_distance_matrix(X)
-#         self.cls_model.fit(own_train, y)
-
-#     def fit_nn(self, X):
-#         self.memory = X
-#         own_train = own_distance_matrix(X)
-#         self.nn_model.fit(own_train)
-
-#     def predict(self, X):
-#         own_test = own_distance_matrix(X, self.memory)
-#         return self.cls_model.predict(own_test)
-    
-#     def get_neighbors(self, X, n_neighbors: int = 5):
-#         own_test = own_distance_matrix(X, self.memory)
-#         dists, neighbors = self.nn_model.kneighbors(own_test, n_neighbors, return_distance=True)
-#         return dists, neighbors
-
 ### Gowers distance 
 import gower
 class GowerKNN(KNNAdapter):
-    def __init__(self, n_neighbors: int = 5):
+    def __init__(self, n_neighbors: int = 5, weights: np.ndarray = None):
         self.n_neighbors = n_neighbors
         self.cls_model = KNeighborsClassifier(n_neighbors=n_neighbors, metric='precomputed')
         self.nn_model = NearestNeighbors(metric='precomputed')
+        self.weights = weights#/weights.sum() if weights is not None else None
 
     def name() -> str:
         return "GOW"
     
     def fit_cls(self, X, y):
         self.memory = X
-        gower_train = gower.gower_matrix(X, X)
+        gower_train = gower.gower_matrix(X, X, weight=self.weights if self.weights is not None else None)
         self.cls_model.fit(gower_train, y)
 
     def fit_nn(self, X):
         self.memory = X
-        gower_train = gower.gower_matrix(X, X)
+        gower_train = gower.gower_matrix(X, X, weight=self.weights if self.weights is not None else None)
         self.nn_model.fit(gower_train)
 
     def predict(self, X):
-        gower_test = gower.gower_matrix(X, self.memory)
+        gower_test = gower.gower_matrix(X, self.memory, weight=self.weights if self.weights is not None else None)
         return self.cls_model.predict(gower_test)
     
     def predict_proba(self, X):
-        gower_test = gower.gower_matrix(X, self.memory)
+        gower_test = gower.gower_matrix(X, self.memory, weight=self.weights if self.weights is not None else None)
         return self.cls_model.predict_proba(gower_test)
     
     def get_neighbors(self, X, n_neighbors: int = 5):
-        gower_test = gower.gower_matrix(X, self.memory)
+        gower_test = gower.gower_matrix(X, self.memory, weight=self.weights if self.weights is not None else None)
         dists, neighbors = self.nn_model.kneighbors(gower_test, n_neighbors, return_distance=True)
         return dists, neighbors
     
@@ -392,4 +363,3 @@ class HvdmKNN(KNNAdapter):
             class_values=class_values
         )
         return self.cls_model.predict_proba(hvdm_test)
-    
