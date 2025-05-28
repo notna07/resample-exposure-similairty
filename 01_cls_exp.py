@@ -23,26 +23,6 @@ from KNN_adapters import KNNAdapter
 
 from joblib import Parallel, delayed
 
-def run_cross_validation(X: DataFrame, y: Series, KNN_method: KNNAdapter, kfold: KFold, k: int) -> float:
-    knn_model = KNN_method(n_neighbors=k)
-    scores, errs = [], []
-    for train_index, test_index in kfold.split(X, y):
-        X_train_fold, X_test_fold = X.iloc[train_index], X.iloc[test_index]
-        y_train_fold, y_test_fold = y.iloc[train_index], y.iloc[test_index]
-
-        knn_model.fit_cls(X_train_fold, y_train_fold)
-        y_pred = knn_model.predict(X_test_fold)
-        score = accuracy_score(y_test_fold, y_pred)
-        scores.append(score)
-        errs.append(np.mean(y_pred != y_test_fold))
-
-    avg_score = np.mean(scores)
-    std_score = np.std(scores, ddof=1)
-
-    avg_err = np.mean(errs)
-    std_err = np.std(errs, ddof=1)
-    return avg_err, std_err
-
 def run_experiment(df_tuple: Tuple[DataFrame, str], KNN_method: KNNAdapter, best_k: int = None, test_size: float = 0.2, random_state: int = 42) -> Dict[str, float]:
     """ Run a classification experiment using the specified KNN method.
 

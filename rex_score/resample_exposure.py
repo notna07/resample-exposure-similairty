@@ -9,6 +9,7 @@ import numpy as np
 from numpy import ndarray
 from typing import Dict, List, Tuple, Union # Added Union
 from pandas import DataFrame, Series
+from joblib import Parallel, delayed # Added for parallel processing
 
 from .utils.preprocessing import get_cat_variables, scott_ref_rule
 
@@ -293,7 +294,8 @@ class ResampleExposure:
         return resample_exposure_index
     
     def resample_exposure_matrix(self, query_df: DataFrame = None, normalised: bool = False, 
-                                 reverse_direction: bool = False, overwrite_memory: bool = False) -> ndarray:
+                                 reverse_direction: bool = False, overwrite_memory: bool = False,
+                                 n_jobs: int = -1) -> ndarray: # Added n_jobs
         """ Compute the resample exposure matrix between two dataframes.
 
         Arguments:
@@ -307,6 +309,7 @@ class ResampleExposure:
                 the synthetic distribution (which is self.memorised_distribution).
             - overwrite_memory (bool): If True, the memorised distribution will be overwritten with the query dataframe.
                 This is useful for calculating the resample exposure matrix between two dataframes.
+            - n_jobs (int): The number of jobs to run in parallel. -1 means using all processors.
 
         Returns:
             - resample exposure matrix (ndarray): The resample exposure matrix between the two dataframes.
@@ -315,7 +318,7 @@ class ResampleExposure:
             >>> memorised_distribution = pd.DataFrame({'feature1': [1.0, 2.0, 1.0, 3.0], 'feature2': ['A', 'B', 'A', 'A']})
             >>> rex = ResampleExposure(memorised_distribution, categorical_features=['feature2'])
             >>> query_data = pd.DataFrame({'feature1': [1.5], 'feature2': ['A']})
-            >>> matrix = rex.resample_exposure_matrix(query_data, normalised=False)
+            >>> matrix = rex.resample_exposure_matrix(query_data, normalised=False, n_jobs=1) # Example with n_jobs
             # This is a conceptual example; actual values depend on internal calculations like Scott's rule.
             # For feature1 (num): query=1.5. Suppose target 1.0 (range e.g. 2.0, hist_prob e.g. 0.5) -> (1-0.5/2)*0.5 = 0.375
             # For feature2 (cat): query='A', target='A' -> 1.0
@@ -331,17 +334,28 @@ class ResampleExposure:
         if query_df is None:
             _processed_query_df = self.memorised_distribution.copy() 
         else:
-            _processed_query_df = query_df.copy() # Use a copy to avoid modifying original query_df
+            _processed_query_df = query_df.copy() 
 
-        expected_columns = self.memorised_distribution.columns
+        expected_columns = list(self.memorised_distribution.columns) # Ensure it's a list for consistent indexing
         try:
             _processed_query_df = _processed_query_df[expected_columns]
         except KeyError as e:
             raise ValueError(
-                f"Query DataFrame is missing one or more columns expected from the memorised distribution: {e}"
+                f"Query DataFrame is missing one or more columns expected from the memorised distribution: {e}. Expected: {expected_columns}, Got: {list(_processed_query_df.columns)}"
             ) from e
 
         original_memorised_distribution = None
+        # These variables will hold the state of self's attributes for the parallel computation
+        current_categorical_features = self.categorical_features
+        current_numerical_features = self.numerical_features
+        current_weights = self.weights
+        current_numerical_ranges = self.numerical_ranges
+        current_cat_counts = self.cat_counts
+        current_bin_ranges = self.bin_ranges
+        current_histograms = self.histograms
+        current_height_diff = self.height_diff
+        current_memorised_distribution_for_setup = self.memorised_distribution # For effective_target_df if not overwritten
+
         if overwrite_memory:
             original_memorised_distribution = self.memorised_distribution.copy()
             original_categorical_features = list(self.categorical_features)
@@ -353,24 +367,34 @@ class ResampleExposure:
             original_height_diff = self.height_diff.copy()
             original_setup_done = self._setup_done
 
-            # self.memorised_distribution = _processed_query_df.copy()
+            self.memorised_distribution = _processed_query_df.copy() # Overwrite memorised distribution
             
+            # Re-derive features and re-run setup based on the new memorised_distribution
             detected_cat_features_overwrite = get_cat_variables(self.memorised_distribution, self.unique_threshold)
-            # Respect original categorical_features if they were explicitly provided and still exist
-            # For simplicity, we re-derive based on the new memorised_distribution,
-            # consistent with how __init__ would behave if this was the target_distribution.
             self.categorical_features = [col for col in detected_cat_features_overwrite if col in self.memorised_distribution.columns]
             self.numerical_features = [col for col in self.memorised_distribution.columns if col not in self.categorical_features]
-            self._setup()
+            self._setup() # This will use the new self.memorised_distribution
+
+            # Update 'current_' variables to reflect the overwritten state for computation
+            current_categorical_features = self.categorical_features
+            current_numerical_features = self.numerical_features
+            # current_weights remains self.weights (not changed by overwrite_memory)
+            current_numerical_ranges = self.numerical_ranges
+            current_cat_counts = self.cat_counts
+            current_bin_ranges = self.bin_ranges
+            current_histograms = self.histograms
+            current_height_diff = self.height_diff
+            current_memorised_distribution_for_setup = self.memorised_distribution
+
 
         effective_query_df: DataFrame
         effective_target_df: DataFrame
 
         if not reverse_direction:
             effective_query_df = _processed_query_df
-            effective_target_df = self.memorised_distribution 
+            effective_target_df = current_memorised_distribution_for_setup # Uses original or overwritten memorised_distribution
         else: 
-            effective_query_df = self.memorised_distribution
+            effective_query_df = current_memorised_distribution_for_setup # Uses original or overwritten memorised_distribution
             effective_target_df = _processed_query_df
             
         num_effective_query_rows = len(effective_query_df)
@@ -378,164 +402,186 @@ class ResampleExposure:
         
         result_matrix = np.zeros((num_effective_query_rows, num_effective_target_rows))
 
-        # Precompute categorical probabilities
-        cat_probs_for_effective_targets = np.zeros((num_effective_target_rows, len(self.categorical_features)))
-        if self.categorical_features:
-            et_cat_values_all_local = effective_target_df[self.categorical_features].values
-            for k_cat, col_name in enumerate(self.categorical_features):
-                if col_name in self.cat_counts:
-                    counts = self.cat_counts[col_name] 
+        # Precompute categorical probabilities using current (potentially overwritten) state
+        cat_probs_for_effective_targets = np.zeros((num_effective_target_rows, len(current_categorical_features)))
+        if current_categorical_features and num_effective_target_rows > 0:
+            et_cat_values_all_local = effective_target_df[current_categorical_features].values
+            for k_cat, col_name in enumerate(current_categorical_features):
+                if col_name in current_cat_counts:
+                    counts = current_cat_counts[col_name] 
                     for j in range(num_effective_target_rows):
                         target_val = et_cat_values_all_local[j, k_cat]
                         cat_probs_for_effective_targets[j, k_cat] = counts.get(target_val, 0.0)
-                else:
+                else: # Should not happen if features are consistent
                     cat_probs_for_effective_targets[:, k_cat] = 0.0
         
-        # Precompute negative descent matrices for numerical features
+        # Precompute negative descent matrices for numerical features using current (potentially overwritten) state
         all_neg_descent_matrices = {}
-        if self.numerical_features:
-            for col_name_precompute in self.numerical_features:
-                if col_name_precompute not in self.histograms or \
-                   col_name_precompute not in self.bin_ranges:
-                    all_neg_descent_matrices[col_name_precompute] = np.empty((0,0), dtype=float) # Mark as unavailable
+        if current_numerical_features:
+            for col_name_precompute in current_numerical_features:
+                if col_name_precompute not in current_histograms or \
+                   col_name_precompute not in current_bin_ranges or \
+                   not current_histograms[col_name_precompute].size: # Check if histogram is empty
+                    all_neg_descent_matrices[col_name_precompute] = np.empty((0,0), dtype=float) 
                     continue
 
-                current_histogram_pre = self.histograms[col_name_precompute]
+                current_histogram_pre = current_histograms[col_name_precompute]
                 num_bins_for_col = len(current_histogram_pre)
 
-                if num_bins_for_col == 0:
+                if num_bins_for_col == 0: # Should be caught by .size check above
                     all_neg_descent_matrices[col_name_precompute] = np.empty((0,0), dtype=float)
                     continue
 
                 sum_hist = np.sum(current_histogram_pre)
-                if sum_hist == 0: # Avoid division by zero if histogram is all zeros
+                if sum_hist == 0: 
                     all_neg_descent_matrices[col_name_precompute] = np.full((num_bins_for_col, num_bins_for_col), np.nan, dtype=float)
                     continue
                 
                 bin_heights = current_histogram_pre / sum_hist
                 neg_descent_matrix_col = np.zeros((num_bins_for_col, num_bins_for_col), dtype=float)
 
-                for b_q in range(num_bins_for_col): # Query bin index
-                    for b_t in range(num_bins_for_col): # Target bin index
+                for b_q in range(num_bins_for_col): 
+                    for b_t in range(num_bins_for_col): 
                         if b_q == b_t:
                             neg_descent_matrix_col[b_q, b_t] = 0.0
                             continue
                         
                         path_segment: ndarray
-                        if b_q < b_t: # Moving from left to right (e.g., b_q=1, b_t=3)
-                            # Path is heights[b_q], heights[b_q+1], ..., heights[b_t]
+                        if b_q < b_t: 
                             path_segment = bin_heights[b_q : b_t + 1]
-                        else: # b_q > b_t, Moving from right to left (e.g., b_q=3, b_t=1)
-                            # Path is heights[b_q], heights[b_q-1], ..., heights[b_t]
-                            # Slice from b_t to b_q (inclusive) and then reverse it
+                        else: 
                             path_segment = bin_heights[b_t : b_q + 1][::-1]
                         
-                        if len(path_segment) < 2: # Should not happen if b_q != b_t and num_bins_for_col > 0
+                        if len(path_segment) < 2: 
                             diffs = np.array([])
                         else:
-                            diffs = np.diff(path_segment) # Differences along the path from b_q to b_t
+                            diffs = np.diff(path_segment) 
                         
-                        neg_diffs = diffs[diffs < 0] # Keep only negative differences (descents)
+                        neg_diffs = diffs[diffs < 0] 
                         neg_descent_matrix_col[b_q, b_t] = np.sum(np.abs(neg_diffs))
                 all_neg_descent_matrices[col_name_precompute] = neg_descent_matrix_col
 
-        eq_cat_values_all = effective_query_df[self.categorical_features].values if self.categorical_features else np.empty((num_effective_query_rows, 0))
-        eq_num_values_all = effective_query_df[self.numerical_features].values if self.numerical_features else np.empty((num_effective_query_rows, 0))
+        eq_cat_values_all = effective_query_df[current_categorical_features].values if current_categorical_features else np.empty((num_effective_query_rows, 0))
+        eq_num_values_all = effective_query_df[current_numerical_features].values if current_numerical_features else np.empty((num_effective_query_rows, 0))
         
-        et_cat_values_for_comp = effective_target_df[self.categorical_features].values if self.categorical_features else np.empty((num_effective_target_rows, 0))
-        et_num_values_for_comp = effective_target_df[self.numerical_features].values if self.numerical_features else np.empty((num_effective_target_rows, 0))
+        et_cat_values_for_comp = effective_target_df[current_categorical_features].values if current_categorical_features else np.empty((num_effective_target_rows, 0))
+        et_num_values_for_comp = effective_target_df[current_numerical_features].values if current_numerical_features else np.empty((num_effective_target_rows, 0))
 
-        for i in range(num_effective_query_rows): 
+        # Define helper function for parallel execution (captures variables from outer scope)
+        def _process_query_row_parallel(i_query_row):
             current_query_total_score_vs_all_targets = np.zeros(num_effective_target_rows)
 
-            if self.categorical_features and num_effective_target_rows > 0:
-                query_cat_row_vals = eq_cat_values_all[i, :] 
+            # Categorical features contribution
+            if current_categorical_features and num_effective_target_rows > 0:
+                query_cat_row_vals = eq_cat_values_all[i_query_row, :] 
                 matches = (query_cat_row_vals == et_cat_values_for_comp)
                 cat_contribution_per_target = np.zeros(num_effective_target_rows)
-                for k_cat, col_name in enumerate(self.categorical_features):
-                    feature_weight = self.weights.get(col_name, 1.0)
+                for k_cat, col_name in enumerate(current_categorical_features):
+                    feature_weight = current_weights.get(col_name, 1.0)
                     if feature_weight == 0: continue
 
                     feature_k_cat_scores = np.where(matches[:, k_cat], 1.0, cat_probs_for_effective_targets[:, k_cat])
                     cat_contribution_per_target += feature_k_cat_scores * feature_weight
                 current_query_total_score_vs_all_targets += cat_contribution_per_target
 
-            if self.numerical_features and num_effective_target_rows > 0:
-                query_num_row_vals = eq_num_values_all[i, :]
+            # Numerical features contribution (vectorized inner loop)
+            if current_numerical_features and num_effective_target_rows > 0:
+                query_num_row_vals = eq_num_values_all[i_query_row, :]
                 num_contribution_per_target_for_query_i = np.zeros(num_effective_target_rows)
 
-                for k_num, col_name in enumerate(self.numerical_features):
-                    feature_weight = self.weights.get(col_name, 1.0)
+                for k_num, col_name in enumerate(current_numerical_features):
+                    feature_weight = current_weights.get(col_name, 1.0)
                     if feature_weight == 0: continue
                     
-                    if col_name not in self.numerical_ranges or \
-                       col_name not in self.bin_ranges or \
-                       col_name not in self.histograms or \
-                       col_name not in self.height_diff or \
+                    if col_name not in current_numerical_ranges or \
+                       col_name not in current_bin_ranges or \
+                       col_name not in current_histograms or \
+                       col_name not in current_height_diff or \
                        col_name not in all_neg_descent_matrices or \
-                       all_neg_descent_matrices[col_name].shape[0] == 0: # Check if precomputation was skipped or resulted in empty
+                       all_neg_descent_matrices[col_name].shape[0] == 0: 
                         continue 
 
                     q_val_scalar = query_num_row_vals[k_num]
                     target_vals_for_feature_k = et_num_values_for_comp[:, k_num] 
                     
-                    current_feature_range = self.numerical_ranges[col_name]
-                    current_bin_ranges = self.bin_ranges[col_name]
-                    current_histogram = self.histograms[col_name] # Used for target_bin_index check
-                    current_height_diff_tuple = self.height_diff[col_name]
-                    precomputed_descent_matrix_col = all_neg_descent_matrices[col_name]
-                    num_bins_for_col_runtime = len(current_histogram)
+                    current_feature_range_val = current_numerical_ranges[col_name]
+                    current_bin_ranges_val = current_bin_ranges[col_name]
+                    current_histogram_val = current_histograms[col_name] # Used for target_bin_index check
+                    current_height_diff_tuple_val = current_height_diff[col_name]
+                    precomputed_descent_matrix_col_val = all_neg_descent_matrices[col_name]
+                    num_bins_for_col_runtime = len(current_histogram_val)
 
-
-                    scores_for_current_feature_all_targets = np.zeros(num_effective_target_rows, dtype=float)
-
-                    for j_target in range(num_effective_target_rows):
-                        t_val_scalar = target_vals_for_feature_k[j_target]
-                        sim_for_feature_target_pair: float
-
-                        if np.isclose(q_val_scalar, t_val_scalar):
-                            sim_for_feature_target_pair = 1.0
-                        else:
-                            diff_num_scalar = q_val_scalar - t_val_scalar
-                            neg_descent_scalar: float
-                            if num_bins_for_col_runtime == 0: # Should align with precomputation skip
-                                neg_descent_scalar = 0.0 if np.sum(current_histogram) != 0 else np.nan
-                            else:
-                                bin_idx_q = np.digitize(q_val_scalar, current_bin_ranges) - 1
-                                bin_idx_t = np.digitize(t_val_scalar, current_bin_ranges) - 1
-                                
-
-                                bin_idx_q_clipped = np.clip(bin_idx_q, 0, num_bins_for_col_runtime - 1)
-                                bin_idx_t_clipped = np.clip(bin_idx_t, 0, num_bins_for_col_runtime - 1)
-                                neg_descent_scalar = precomputed_descent_matrix_col[bin_idx_q_clipped, bin_idx_t_clipped]
-                            
-
-                            height_key_scalar = 0 if diff_num_scalar < 0 else 1
-                            
-                            with np.errstate(divide='ignore', invalid='ignore'):
-                                term1 = (1.0 - (abs(diff_num_scalar) / current_feature_range))
-                                term2_numerator = neg_descent_scalar
-                                term2_denominator = current_height_diff_tuple[height_key_scalar]
-
-                                if term2_denominator == 0: # Avoid 0/0 or x/0 if neg_descent is also 0 or non-0
-                                    term2 = 1.0 if term2_numerator == 0 else 0.0 # if descent is 0, factor is 1. If descent non-0 and max_descent 0, factor is 0.
-                                else:
-                                    term2 = (1.0 - (term2_numerator / term2_denominator))
-
-                                calculated_sim = term1 * term2
-                                if np.isnan(calculated_sim): calculated_sim = 0.0 # Default for NaN results from divisions
-                            sim_for_feature_target_pair = float(calculated_sim)
-                        
-                        target_bin_index = np.digitize(t_val_scalar, current_bin_ranges) - 1
-                        if target_bin_index < 0 or target_bin_index >= len(current_histogram) or len(current_histogram) == 0:
-                            scores_for_current_feature_all_targets[j_target] = 0.0
-                        else:
-                            scores_for_current_feature_all_targets[j_target] = sim_for_feature_target_pair
+                    # Vectorized calculation for all targets for this feature
+                    diff_num_vector = q_val_scalar - target_vals_for_feature_k
                     
+                    neg_descent_vector = np.zeros_like(target_vals_for_feature_k, dtype=float)
+                    if num_bins_for_col_runtime > 0:
+                        bin_idx_q_scalar_clipped = np.clip(np.digitize(q_val_scalar, current_bin_ranges_val) - 1, 0, num_bins_for_col_runtime - 1)
+                        bin_idx_t_vector_clipped = np.clip(np.digitize(target_vals_for_feature_k, current_bin_ranges_val) - 1, 0, num_bins_for_col_runtime - 1)
+                        neg_descent_vector = precomputed_descent_matrix_col_val[bin_idx_q_scalar_clipped, bin_idx_t_vector_clipped]
+                    elif np.sum(current_histogram_val) == 0 and num_bins_for_col_runtime > 0: # Should be caught by precomp if hist sum is 0
+                        neg_descent_vector.fill(np.nan)
+                    else: # num_bins_for_col_runtime == 0 or sum_hist != 0
+                        neg_descent_vector.fill(0.0)
+                    
+                    height_key_vector = np.where(diff_num_vector < 0, 0, 1)
+                    
+                    term1_vector = np.zeros_like(diff_num_vector, dtype=float)
+                    if np.isclose(current_feature_range_val, 0):
+                        term1_vector = np.where(np.isclose(diff_num_vector, 0), 1.0, 0.0)
+                    else:
+                        term1_vector = (1.0 - (np.abs(diff_num_vector) / current_feature_range_val))
+                    
+                    term2_vector = np.zeros_like(diff_num_vector, dtype=float)
+                    term2_denominator_vector = np.array([current_height_diff_tuple_val[key] for key in height_key_vector])
+                    
+                    mask_denom_zero = np.isclose(term2_denominator_vector, 0)
+                    mask_num_zero = np.isclose(neg_descent_vector, 0) # Numerator for term2 is neg_descent_vector
 
-                    num_contribution_per_target_for_query_i += scores_for_current_feature_all_targets * feature_weight # Apply weight here
+                    term2_vector[mask_denom_zero & mask_num_zero] = 1.0  # 0/0 case for (neg_desc / max_desc) -> term2 is 1.0
+                    term2_vector[mask_denom_zero & ~mask_num_zero] = 0.0 # x/0 case for (neg_desc / max_desc) -> term2 is 0.0
+                    
+                    mask_denom_nonzero = ~mask_denom_zero
+                    if np.any(mask_denom_nonzero):
+                        term2_vector[mask_denom_nonzero] = (1.0 - (neg_descent_vector[mask_denom_nonzero] / term2_denominator_vector[mask_denom_nonzero]))
+                    
+                    calculated_sim_vector = term1_vector * term2_vector
+                    calculated_sim_vector[np.isnan(calculated_sim_vector)] = 0.0 
+                    
+                    sim_for_feature_target_pair_vector = np.where(np.isclose(q_val_scalar, target_vals_for_feature_k), 1.0, calculated_sim_vector)
+                    
+                    target_bin_indices = np.digitize(target_vals_for_feature_k, current_bin_ranges_val) - 1
+                    valid_target_bin_mask = (target_bin_indices >= 0) & \
+                                            (target_bin_indices < len(current_histogram_val)) & \
+                                            (len(current_histogram_val) > 0)
+                    
+                    scores_for_current_feature_all_targets = np.where(valid_target_bin_mask, sim_for_feature_target_pair_vector, 0.0)
+                    num_contribution_per_target_for_query_i += scores_for_current_feature_all_targets * feature_weight
+                
                 current_query_total_score_vs_all_targets += num_contribution_per_target_for_query_i
-            result_matrix[i, :] = current_query_total_score_vs_all_targets
+            return current_query_total_score_vs_all_targets
+
+        if num_effective_query_rows > 0:
+            # Parallel execution
+            results_list = Parallel(n_jobs=n_jobs)(
+                delayed(_process_query_row_parallel)(i) for i in range(num_effective_query_rows)
+            )
+            if results_list: # Ensure results_list is not empty
+                 result_matrix = np.array(results_list)
+                 # Ensure correct shape if one dimension is 0 or 1
+                 if result_matrix.ndim == 1:
+                     if num_effective_target_rows == 1:
+                         result_matrix = result_matrix.reshape(-1, 1)
+                     elif num_effective_query_rows == 1: # Should already be (1, N) if targets > 0
+                         result_matrix = result_matrix.reshape(1, -1)
+                 # If num_effective_target_rows is 0, result_matrix should be (num_query_rows, 0)
+                 # np.array([np.array([]), np.array([])]) gives shape (2,0)
+            else: # Should not happen if num_effective_query_rows > 0, but as safeguard
+                 result_matrix = np.zeros((num_effective_query_rows, num_effective_target_rows))
+
+        else: # No query rows
+            result_matrix = np.zeros((0, num_effective_target_rows))
+
 
         if overwrite_memory and original_memorised_distribution is not None:
             self.memorised_distribution = original_memorised_distribution
@@ -546,19 +592,16 @@ class ResampleExposure:
             self.bin_ranges = original_bin_ranges
             self.histograms = original_histograms
             self.height_diff = original_height_diff
-            self._setup_done = original_setup_done # Restore setup status
+            self._setup_done = original_setup_done 
 
         if normalised:
-            # Use features from the perspective of the 'self' object, which defines the weights
-            active_features_for_norm = self.categorical_features + self.numerical_features
+            active_features_for_norm = self.categorical_features + self.numerical_features # Use restored self state
             sum_of_weights = sum(self.weights.get(f, 0.0) for f in active_features_for_norm if self.weights.get(f, 0.0) > 0)
 
             if sum_of_weights > 0:
                 result_matrix /= sum_of_weights
-            else: # If sum_of_weights is 0, set matrix to 0 or NaN if it's not already 0
-                  # Assuming if sum_of_weights is 0, all contributions should be 0.
-                  # If result_matrix contains non-zero values, it implies an issue or negative weights.
-                result_matrix[result_matrix != 0] = np.nan # Or set all to 0: result_matrix.fill(0.0)
-                result_matrix[np.isclose(result_matrix, 0)] = 0.0 # Ensure zeros stay zero
+            else: 
+                result_matrix[result_matrix != 0] = np.nan 
+                result_matrix[np.isclose(result_matrix, 0)] = 0.0 
         
         return result_matrix

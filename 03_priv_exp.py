@@ -46,7 +46,7 @@ def run_experiment(df_tuple, KNN_method, random_state=42):
     for i in range(NUM_REPEATS):
         df_syn = rSynthpop(df, seed=random_state*i)
 
-        if exp_name == 'GOW':
+        if exp_name == 'GOW' or exp_name == 'GOW':
             # convert integers to float to prevent issues with Gower distance
             df_syn = df_syn.copy().astype({col: 'float64' for col in df_syn.select_dtypes(include=['int']).columns})
 
@@ -92,21 +92,21 @@ if __name__ == "__main__":
     results_file = '03_privacy_results.csv'
 
     datasets = {
-        # # 'autism' : (dataset.load_autism_screening(), "Class/ASD"),
+        'autism' : (dataset.load_autism_screening(), "Class/ASD"),
         # 'balance_scale' : (uci_dataset_id_import(12), "class"),
         # 'breast_cancer': (dataset.load_breast_cancer(), "Class"),
         # 'cervical_cancer': (dataset.load_cervical_cancer(), "Biopsy"),
-        # # 'cirrhosis': (uci_dataset_id_import(878), "class"),
-        # # 'credit_approval': (dataset.load_credit_approval(), "A16"),
-        # # 'cylinder_bands': (dataset.load_cylinder_bands(), "band type"),
-        # # 'dermatology': (dataset.load_dermatology(), "class"),
-        # # 'diabetic_retino': (dataset.load_diabetic(), "Class"),
+        'cirrhosis': (uci_dataset_id_import(878), "class"),
+        'credit_approval': (dataset.load_credit_approval(), "A16"),
+        'cylinder_bands': (dataset.load_cylinder_bands(), "band type"),
+        'dermatology': (dataset.load_dermatology(), "class"),
+        'diabetic_retino': (dataset.load_diabetic(), "Class"),
         # 'early_diabetes': (dataset.load_early_stage_diabetes_risk(), "class"),
         # 'fertility': (dataset.load_fertility(), "Diagnosis"),
-        # # 'glass' : (uci_dataset_id_import(42), "class"),
-        # # 'german_credit' : (uci_dataset_id_import(144), "class"),
-        'haberman': (dataset.load_haberman(), "survival"),
-        'hayes_roth': (dataset.load_hayes_roth(), "class"),
+        'glass' : (uci_dataset_id_import(42), "class"),
+        'german_credit' : (uci_dataset_id_import(144), "class"),
+        # 'haberman': (dataset.load_haberman(), "survival"),
+        # 'hayes_roth': (dataset.load_hayes_roth(), "class"),
         # 'hcv_values': (dataset.load_hcv(), "Category"),
         # 'heart': (uci_dataset_id_import(145), 'class'),
         # 'heart_disease': (dataset.load_heart_disease(), "target"),
@@ -114,26 +114,26 @@ if __name__ == "__main__":
         # 'indian_liver': (dataset.load_indian_liver(), "Selector"),
         # 'iris': (sns.load_dataset('iris'), "species"),
         # 'liver_disorder': (dataset.load_liver_disorders(), "selector"),
-        # # 'kidney_disease': (uci_dataset_id_import(336), "class"),
-        'lymphography': (dataset.load_lymphography(), "class"),
-        'mammographic': (uci_dataset_id_import(161), "class"),
-        # # 'maternal': (uci_dataset_id_import(863), "class"),
+        'kidney_disease': (uci_dataset_id_import(336), "class"),
+        # 'lymphography': (dataset.load_lymphography(), "class"),
+        # 'mammographic': (uci_dataset_id_import(161), "class"),
+        'maternal': (uci_dataset_id_import(863), "class"),
         # 'mushroom': (uci_dataset_id_import(73), "class"),
-        # # 'obesity_levels': (uci_dataset_id_import(544), "class"),
+        'obesity_levels': (uci_dataset_id_import(544), "class"),
         # 'parkinsons': (dataset.load_parkinson(), "status"),
         # 'penguins': (sns.load_dataset('penguins'), "species"),
-        # # 'raisin': (uci_dataset_id_import(850), "class"),
+        'raisin': (uci_dataset_id_import(850), "class"),
         # 'soy_bean': (uci_dataset_id_import(90), "class"),
         # 'student_performance': (uci_dataset_id_import(856), "class"),
-        # # 'thoracic_surgery': (dataset.load_thoracic_surgery(), "Risk1Yr"),
+        'thoracic_surgery': (dataset.load_thoracic_surgery(), "Risk1Yr"),
         # 'voting' : (uci_dataset_id_import(105), "class"),
-        # # 'wisconsin_bc' : (dataset.load_breast_cancer_wis_diag(), "diagnosis"),
+        'wisconsin_bc' : (dataset.load_breast_cancer_wis_diag(), "diagnosis"),
     }
 
     experiments = {
         # 'L2': EuclideanKNN,
-        'Gower': GowerKNN,
-        # 'REX': REX_KNN,
+        # 'Gower': GowerKNN,
+        'REX': REX_KNN,
     }
 
     for dataset_name, df_tuple in datasets.items():
