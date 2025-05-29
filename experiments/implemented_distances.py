@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from collections import defaultdict
 
-from prepare_data import get_categorical_features
+from experiments.prepare_data import get_categorical_features
 
 def heom_distance_matrix(X: pd.DataFrame, Y: pd.DataFrame | None = None, unique_threshold: int = 10) -> np.ndarray:
     """

@@ -17,9 +17,9 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 
 from sklearn.model_selection import StratifiedKFold, KFold
 
-from prepare_data import preprocess_data, uci_dataset_id_import
-from plots import plot_cross_validation_results
-from KNN_adapters import KNNAdapter
+from experiments.prepare_data import preprocess_data, uci_dataset_id_import
+from experiments.plots import plot_cross_validation_results
+from experiments.KNN_adapters import KNNAdapter
 
 from joblib import Parallel, delayed
 
@@ -113,7 +113,7 @@ if __name__ == "__main__":
     import time
     import seaborn as sns
     import uci_dataset as dataset
-    from KNN_adapters import (
+    from experiments.KNN_adapters import (
         EuclideanKNN, GowerKNN, REX_KNN,
         EuclideanKNN_OneHot, HeomKNN, 
         GeneralisedEuclideanKNN, HvdmKNN

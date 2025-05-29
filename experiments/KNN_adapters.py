@@ -7,7 +7,7 @@ import numpy as np
 from abc import ABC, abstractmethod
 
 from sklearn.metrics import accuracy_score
-from prepare_data import get_categorical_features
+from experiments.prepare_data import get_categorical_features
 
 ### Adapter pattern 
 class KNNAdapter(ABC):
@@ -254,7 +254,7 @@ class GowerKNN(KNNAdapter):
 #         return dists, neighbors
     
 ### Heterogeneous Euclidean-overlap 
-from implemented_distances import heom_distance_matrix
+from experiments.implemented_distances import heom_distance_matrix
 class HeomKNN(KNNAdapter):
     def __init__(self, n_neighbors: int = 5):
         self.n_neighbors = n_neighbors
@@ -289,7 +289,7 @@ class HeomKNN(KNNAdapter):
         return dists, neighbors
         
 ### Generalised Euclidean distance
-from implemented_distances import ichino_yaguchi_distance_matrix
+from experiments.implemented_distances import ichino_yaguchi_distance_matrix
 class GeneralisedEuclideanKNN(KNNAdapter):
     def __init__(self, n_neighbors: int = 5):
         self.n_neighbors = n_neighbors
@@ -324,7 +324,7 @@ class GeneralisedEuclideanKNN(KNNAdapter):
         return dists, neighbors
     
 ### Heterogeneous value difference metric
-from implemented_distances import hvdm_distance_matrix, compute_vdm_tables
+from experiments.implemented_distances import hvdm_distance_matrix, compute_vdm_tables
 class HvdmKNN(KNNAdapter):
     def __init__(self, n_neighbors: int = 5):
         self.n_neighbors = n_neighbors

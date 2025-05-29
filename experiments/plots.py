@@ -133,7 +133,7 @@ def plot_multi_dataset_contour_comparison(datasets_dict, source_point_pca=[0, 0]
             
             sns.scatterplot(x=X_pca[:, 0], y=X_pca[:, 1], 
                             hue=df.get('class'), 
-                            palette='tab10', s=50, ax=ax, legend=False)
+                            palette='tab20c', s=50, ax=ax, legend=False)
             
             ax.scatter(source_point_pca[0], source_point_pca[1], color='red', s=200, marker='x')
 
@@ -258,7 +258,7 @@ def plot_multi_dataset_heatmap_comparison(datasets_dict: dict):
             
             sns.scatterplot(x=X_pca[:, 0], y=X_pca[:, 1], 
                             hue=df.get('class'), # Use .get for safety if 'class' column might be missing
-                            palette='tab10', s=50, ax=ax, legend=False)
+                            palette='tab20c', s=50, ax=ax, legend=False)
             
             data_grid_to_plot = plot_data_grids[col_idx]
             ax.imshow(data_grid_to_plot, extent=(-3.5, 3.5, -3.5, 3.5), 
