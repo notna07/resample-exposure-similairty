@@ -335,7 +335,7 @@ def plot_clustering_scores_artificial_data(res_dataframe: pd.DataFrame) -> None:
 
     metric_order = ['REX', 'GOW', 'GEM', 'HEOM', 'L2', 'L2_OHE']  # Fixed metric order
 
-    Sizes = {'Large':"16", 'Medium':"8", 'Small':'4'}
+    Sizes = {'Large':"14", 'Medium':"8", 'Small':'4'}
 
     # Loop through measures and dataset sizes
     for i, measure in enumerate(['ARI', 'NMI']):
