@@ -5,7 +5,11 @@
 import numpy as np
 
 from abc import ABC, abstractmethod
+from typing import Tuple, List
+from pandas import DataFrame
+from numpy import ndarray
 
+from sklearn_extra.cluster import KMedoids
 from sklearn.metrics import accuracy_score
 from experiments.prepare_data import get_categorical_features
 
@@ -65,6 +69,13 @@ class EuclideanKNN(KNNAdapter):
     def get_neighbors(self, X, n_neighbors: int = 5):
         dists, neighbors = self.nn_model.kneighbors(X, n_neighbors, return_distance=True)
         return dists, neighbors
+    
+def eucledian_kmedoids(df: DataFrame, n_clusters: int = 4, seed: int = 42) -> Tuple[ndarray, ndarray]:
+    kmedoids = KMedoids(n_clusters=n_clusters, random_state=seed, metric='euclidean')
+    kmedoids.fit(df)
+    
+    return kmedoids.labels_, kmedoids.medoid_indices_
+
 
 from sklearn.preprocessing import OneHotEncoder
 class EuclideanKNN_OneHot(KNNAdapter):
@@ -117,6 +128,19 @@ class EuclideanKNN_OneHot(KNNAdapter):
         dists, neighbors = self.nn_model.kneighbors(X, n_neighbors, return_distance=True)
         return dists, neighbors
 
+def eucledian_kmedoids_OHE(df: DataFrame, n_clusters: int = 4, seed: int = 42) -> Tuple[ndarray, ndarray]:
+    df = df.copy()
+    cat_feats = get_categorical_features(df)
+    ohe = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+    df_ohe = ohe.fit_transform(df[cat_feats])
+    df_ohe = np.hstack((df_ohe, df.drop(columns=cat_feats).values))  # Combine OHE with numerical features
+
+    kmedoids = KMedoids(n_clusters=n_clusters, random_state=seed, metric='euclidean')
+    kmedoids.fit(df_ohe)
+
+    return kmedoids.labels_, kmedoids.medoid_indices_
+
+
 ### REX distance metric
 from rex_score.resample_exposure import ResampleExposure
 class REX_KNN(KNNAdapter):
@@ -160,6 +184,16 @@ class REX_KNN(KNNAdapter):
         dists, neighbors = self.nn_model.kneighbors(rex_test, n_neighbors, return_distance=True)
         return dists, neighbors
 
+def resample_exposure_kmedoids(df: DataFrame, n_clusters: int = 4, seed: int = 42) -> Tuple[ndarray, ndarray]:
+    rex = ResampleExposure(df)
+    exposure_matrix = rex.resample_exposure_matrix(normalised=True, reverse_direction=True)
+    exposure_matrix = np.ones_like(exposure_matrix) - exposure_matrix  # Invert the exposure matrix for PCA
+
+    kmedoids = KMedoids(n_clusters=n_clusters, random_state=seed, metric='precomputed')
+    kmedoids.fit(exposure_matrix.T)
+
+    return kmedoids.labels_, kmedoids.medoid_indices_
+
 ### Gowers distance 
 import gower
 class GowerKNN(KNNAdapter):
@@ -195,64 +229,15 @@ class GowerKNN(KNNAdapter):
         dists, neighbors = self.nn_model.kneighbors(gower_test, n_neighbors, return_distance=True)
         return dists, neighbors
     
-### Cosine similarity
-# from sklearn.metrics.pairwise import cosine_similarity
-# class CosineKNN(KNNAdapter):
-#     def __init__(self, n_neighbors: int = 5):
-#         self.n_neighbors = n_neighbors
-#         self.cls_model = KNeighborsClassifier(n_neighbors=n_neighbors, metric='precomputed')
-#         self.nn_model = NearestNeighbors(metric='precomputed')
+def gower_kmedoids(df: DataFrame, n_clusters: int = 4, seed: int = 42) -> Tuple[ndarray, ndarray]:
+    gower_matrix = gower.gower_matrix(df)
 
-#     def name() -> str:
-#         return "Cosine"
-    
-#     def fit(self, X, y):
-#         self.memory = X
-#         cosine_train = cosine_similarity(X)
-#         cosine_train = np.abs(np.ones_like(cosine_train) - cosine_train)
-#         self.cls_model.fit(cosine_train, y)
-#         self.nn_model.fit(cosine_train)
+    kmedoids = KMedoids(n_clusters=n_clusters, random_state=seed, metric='precomputed')
+    kmedoids.fit(gower_matrix)
 
-#     def predict(self, X):
-#         cosine_test = cosine_similarity(X, self.memory)
-#         cosine_test = np.abs(np.ones_like(cosine_test) - cosine_test)
-#         return self.cls_model.predict(cosine_test)
-    
-#     def get_neighbors(self, X, n_neighbors: int = 5):
-#         cosine_test = cosine_similarity(X, self.memory)
-#         cosine_test = np.abs(np.ones_like(cosine_test) - cosine_test)
-#         dists, neighbors = self.nn_model.kneighbors(cosine_test, n_neighbors, return_distance=True)
-#         return dists, neighbors
-    
-# ### Chi-squared distance
-# from sklearn.metrics.pairwise import chi2_kernel
-# class Chi2KNN(KNNAdapter):
-#     def __init__(self, n_neighbors: int = 5):
-#         self.n_neighbors = n_neighbors
-#         self.cls_model = KNeighborsClassifier(n_neighbors=n_neighbors, metric='precomputed')
-#         self.nn_model = NearestNeighbors(metric='precomputed')
+    return kmedoids.labels_, kmedoids.medoid_indices_
 
-#     def name() -> str:
-#         return "Chi2"
-    
-#     def fit(self, X, y):
-#         self.memory = X
-#         chi2_train = chi2_kernel(X)
-#         chi2_train = np.abs(np.ones_like(chi2_train) - chi2_train)
-#         self.cls_model.fit(chi2_train, y)
-#         self.nn_model.fit(chi2_train)
-
-#     def predict(self, X):
-#         chi2_test = chi2_kernel(X, self.memory)
-#         chi2_test = np.abs(np.ones_like(chi2_test) - chi2_test)
-#         return self.cls_model.predict(chi2_test)
-    
-#     def get_neighbors(self, X, n_neighbors: int = 5):
-#         chi2_test = chi2_kernel(X, self.memory)
-#         chi2_test = np.abs(np.ones_like(chi2_test) - chi2_test)
-#         dists, neighbors = self.nn_model.kneighbors(chi2_test, n_neighbors, return_distance=True)
-#         return dists, neighbors
-    
+   
 ### Heterogeneous Euclidean-overlap 
 from experiments.implemented_distances import heom_distance_matrix
 class HeomKNN(KNNAdapter):
@@ -287,7 +272,15 @@ class HeomKNN(KNNAdapter):
         heom_test = heom_distance_matrix(X, self.memory)
         dists, neighbors = self.nn_model.kneighbors(heom_test, n_neighbors, return_distance=True)
         return dists, neighbors
-        
+
+def heom_kmedoids(df: DataFrame, n_clusters: int = 4, seed: int = 42) -> Tuple[ndarray, ndarray]:
+    distance_matrix = heom_distance_matrix(df)
+    
+    kmedoids = KMedoids(n_clusters=n_clusters, random_state=seed, metric='precomputed')
+    kmedoids.fit(distance_matrix)
+
+    return kmedoids.labels_, kmedoids.medoid_indices_
+
 ### Generalised Euclidean distance
 from experiments.implemented_distances import ichino_yaguchi_distance_matrix
 class GeneralisedEuclideanKNN(KNNAdapter):
@@ -322,7 +315,16 @@ class GeneralisedEuclideanKNN(KNNAdapter):
         gem_test = ichino_yaguchi_distance_matrix(X, self.memory)
         dists, neighbors = self.nn_model.kneighbors(gem_test, n_neighbors, return_distance=True)
         return dists, neighbors
+
+def gem_kmedoids(df: DataFrame, n_clusters: int = 4, seed: int = 42) -> Tuple[ndarray, ndarray]:
+    distance_matrix = ichino_yaguchi_distance_matrix(df)
     
+    kmedoids = KMedoids(n_clusters=n_clusters, random_state=seed, metric='precomputed')
+    kmedoids.fit(distance_matrix)
+
+    return kmedoids.labels_, kmedoids.medoid_indices_
+
+
 ### Heterogeneous value difference metric
 from experiments.implemented_distances import hvdm_distance_matrix, compute_vdm_tables
 class HvdmKNN(KNNAdapter):

@@ -9,19 +9,15 @@ sys.path.append(".")
 import numpy as np
 import pandas as pd
 
-from pandas import DataFrame, Series
+from pandas import DataFrame
 from typing import Dict, Tuple
 
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score, balanced_accuracy_score
+from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score, balanced_accuracy_score
 
-from sklearn.model_selection import StratifiedKFold, KFold
+from sklearn.model_selection import StratifiedKFold
 
 from experiments.prepare_data import preprocess_data, uci_dataset_id_import
-from experiments.plots import plot_cross_validation_results
 from experiments.KNN_adapters import KNNAdapter
-
-from joblib import Parallel, delayed
 
 def run_experiment(df_tuple: Tuple[DataFrame, str], KNN_method: KNNAdapter, best_k: int = None, test_size: float = 0.2, random_state: int = 42) -> Dict[str, float]:
     """ Run a classification experiment using the specified KNN method.
@@ -41,7 +37,6 @@ def run_experiment(df_tuple: Tuple[DataFrame, str], KNN_method: KNNAdapter, best
     exp_name = KNN_method.name()
 
     X, y = df.drop(columns=['class']), df['class']
-    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state, stratify=y)
  
     best_k = (np.sqrt(len(X))/2).astype(int)
 
@@ -120,7 +115,7 @@ if __name__ == "__main__":
     )
 
     OVERWRITE = False
-    results_file = '01_knn_cls_results.csv'
+    results_file = 'experiments/results/01_knn_cls_results.csv'
 
     datasets = {
         'autism' : (dataset.load_autism_screening(), "Class/ASD"),
@@ -190,3 +185,6 @@ if __name__ == "__main__":
                 OVERWRITE = False
             else:
                 results_df.to_csv(results_file, mode='a', header=False, index=False)
+            print(f"Results saved for {dataset_name} with method {exp_name}")
+    
+    print("All experiments completed.")

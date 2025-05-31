@@ -2,7 +2,8 @@
 # Author: Anton D. Lautrup
 # Date: 20-05-2025
 
-from typing import List
+from pandas import DataFrame
+from typing import List, Dict
 
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -286,4 +287,150 @@ def plot_multi_dataset_heatmap_comparison(datasets_dict: dict):
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.97]) 
     plt.savefig("plots/heatmap_comparison.pdf", bbox_inches='tight')
+    pass
+
+def plot_clustering_subplots(df: DataFrame, metrics: Dict[str, callable], n_clusters: int = 4, seed: int = 42):
+    
+    df_x, df_y = df.drop(columns=['class']), df['class']
+
+    fig, axes = plt.subplots(1, 6, figsize=(10,2), sharex=True, sharey=True)
+    axes = axes.flatten()
+
+    for i, (metric_name, metric_func) in enumerate(metrics.items()):
+        labels, medoid_indices = metric_func(df_x, n_clusters=n_clusters, seed=seed)
+
+        # plot the data in principal component space
+        pca = PCA(n_components=2)
+        X_std = (df_x - df_x.mean()) / df_x.std()
+        pca_result = pca.fit_transform(X_std)
+
+        sns.scatterplot(x=pca_result[:, 0], y=pca_result[:, 1], hue=df_y, palette='tab20c', s=20, ax=axes[i])
+        axes[i].set_title(metric_name, fontsize=10)
+        axes[i].get_legend().remove()
+
+        ## draw lines between the points and the medoids
+        cols_palette = sns.color_palette('tab10', n_colors=n_clusters)
+        for j, medoid in enumerate(medoid_indices):
+            medoid_pca = pca_result[medoid].reshape(1, -1)
+
+            for k in range(len(pca_result[labels == j])):
+                axes[i].plot([pca_result[labels == j][k, 0], medoid_pca[0, 0]], 
+                             [pca_result[labels == j][k, 1], medoid_pca[0, 1]], 
+                             color=cols_palette[j], linestyle='--', linewidth=0.5)
+
+    plt.tight_layout()
+    plt.savefig('plots/clustering_subplots.pdf', dpi=300)
+    plt.show()
+    pass
+
+def plot_clustering_scores_artificial_data(res_dataframe: pd.DataFrame) -> None:
+
+    # Set up the figure with 2 rows (for ARI and NMI) and 3 columns (for Large/Medium/Small)
+    fig, axes = plt.subplots(2, 3, figsize=(14, 6), sharey='row', sharex=True)
+    plt.subplots_adjust(hspace=0.4, wspace=0.15)  # Add spacing between triplets
+
+    # Define consistent hue order
+    hue_order = ['Reals', 'Cats', 'Balanced']
+    features_distribution_dict = {'Reals':'Majority Quantitative', 'Cats':'Majority Nominal', 'Balanced':'Balanced'}
+
+    metric_order = ['REX', 'GOW', 'GEM', 'HEOM', 'L2', 'L2_OHE']  # Fixed metric order
+
+    Sizes = {'Large':"16", 'Medium':"8", 'Small':'4'}
+
+    # Loop through measures and dataset sizes
+    for i, measure in enumerate(['ARI', 'NMI']):
+        for j, dim in enumerate(['Large', 'Medium', 'Small']):
+            ax = axes[i, j]
+            data_subset = res_dataframe[
+                (res_dataframe['measure'] == measure) & 
+                (res_dataframe['dims'] == dim)
+            ]
+
+            # Plot stripplot and pointplot with consistent metric order
+            sns.stripplot(
+                data=data_subset,
+                x="metric", y="result", hue='size',
+                hue_order=hue_order,
+                order=metric_order,  # Ensure consistent metric order
+                dodge=.2, alpha=.4, legend=False,
+                jitter=False, ax=ax, palette="tab20c"
+            )
+            point_plot = sns.pointplot(
+                data=data_subset,
+                x="metric", y="result", hue='size',
+                hue_order=hue_order,
+                order=metric_order,  # Ensure consistent metric order
+                dodge=.6, linestyle='none', 
+                errorbar='sd', capsize=0.15,
+                marker="_", markersize=10, markeredgewidth=2.5, 
+                ax=ax, palette="tab20b", alpha=1,
+                err_kws={'linewidth': 1}
+            )
+            
+            # Add connecting lines between means
+            for metric_val in metric_order:
+                # Calculate x-position for current metric
+                x_pos = metric_order.index(metric_val)
+                
+                # Calculate positions for line endpoints
+                line_x = [x_pos - 0.3, x_pos, x_pos + 0.3]
+                
+                # Get y-values (means) from pointplot
+                line_y = []
+                for hue_val in hue_order:
+                    # Filter data for specific metric and hue
+                    filtered = data_subset[(data_subset['metric'] == metric_val) & 
+                                        (data_subset['size'] == hue_val)]
+                    # Calculate mean if data exists
+                    if not filtered.empty:
+                        line_y.append(filtered['result'].mean())
+                    else:
+                        line_y.append(np.nan)
+                
+                # Plot connecting line if we have all values
+                if len(line_y) == 3 and not any(np.isnan(line_y)):
+                    ax.plot(line_x, line_y, color='gray', linestyle='-', 
+                            linewidth=1, alpha=0.5, zorder=0)
+            
+            # Formatting
+            ax.spines[['top', 'right']].set_visible(False)
+            ax.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.6)
+            if i == 0:
+                ax.set_title(f' # Number of Dimensions = {Sizes[dim]}', fontsize=11)
+            
+            # Remove left spine for middle and right columns
+            if j > 0:
+                ax.spines['left'].set_visible(False)
+                ax.tick_params(axis='y', color='gray')
+            
+            # Add y-label for leftmost plots
+            if j == 0:
+                ax.set_ylabel(measure)
+            
+            # Add legend only to top-left plot
+            if i == 1 and j == 2:
+                handles, labels = ax.get_legend_handles_labels()
+                ax.legend(
+                    handles[:len(hue_order)], 
+                    [features_distribution_dict.get(k, None) for k in hue_order],
+                    title='Feature types',
+                    title_fontsize=9,
+                    fontsize=8,
+                    loc='lower right'
+                )
+            else:
+                ax.get_legend().remove()
+        
+    # Add common x-axis label
+    fig.text(0.5, 0.01, 'Distance Metrics', ha='center', va='center', fontsize=12)
+
+    # Remove individual x-axis labels from all subplots
+    for ax in axes.flat:
+        ax.set_xlabel('')
+
+    plt.tight_layout()
+    plt.subplots_adjust(bottom=0.08)  # Make space for x-axis label
+    plt.savefig("plots/clustering_scores_artificial.pdf", dpi=300)
+    # plt.savefig("plots/plotBox Plots.png") 
+    plt.show()
     pass

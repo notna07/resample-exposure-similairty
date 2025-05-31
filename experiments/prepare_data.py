@@ -1,14 +1,16 @@
 # Description: Script to hold utility functions
-# Author: Anton D. Lautrup
+# Authors: Anton D. Lautrup, Hafiz Saud Arshad
 # Date: 20-05-2025
 
 import numpy as np
 
+from numpy import ndarray
 from pandas import DataFrame
 from typing import List, Tuple
 
 from ucimlrepo import fetch_ucirepo
 
+from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import OrdinalEncoder, StandardScaler
 
 def uci_dataset_id_import(dataset_id: int, silent_import: bool = True) -> DataFrame:
@@ -158,3 +160,51 @@ def scott_ref_rule(samples: List[float]) -> List[float]:
     Nplus1 = N + 1
     
     return np.linspace(min_edge, max_edge, Nplus1)
+
+def replace_features_with_gmm_category(X: ndarray,
+                                       y: ndarray,
+                                       idx1: int, idx2: int,
+                                       n_components: int = 3,
+                                        random_state: int = 42) -> Tuple[ndarray, ndarray]:
+    """ Utility function to build categorical features in artificial data from 
+    converting two numerical features using Gaussian Mixture Model (GMM).
+
+    Arguments:
+        X (ndarray): Feature matrix.
+        y (ndarray): Target vector.
+        idx1 (int): Index of the first feature to be replaced.
+        idx2 (int): Index of the second feature to be replaced.
+        n_components (int): Number of GMM components to use.
+        random_state (int): Random state for reproducibility.
+    
+    Returns:
+        Tuple[ndarray, ndarray]: New feature matrix with the two features replaced by a categorical feature,
+                                  and the target vector.
+
+    Example:
+        >>> X_new, y_new = replace_features_with_gmm_category(X, y, 0, 1, n_components=3)
+    """
+    
+    # Extract the two selected features
+    X_subset = X[:, [idx1, idx2]]
+    
+    # Fit Gaussian Mixture Model
+    gmm = GaussianMixture(n_components=n_components, 
+                          random_state=random_state,
+                          covariance_type='full')
+    gmm.fit(X_subset)
+    cluster_labels = gmm.predict(X_subset)
+    
+    # Convert cluster labels to letters (0->'a', 1->'b', etc.)
+    #cat_column = np.array([chr(97 + label) for label in cluster_labels])  # 97 is ASCII for 'a'
+    cat_column = cluster_labels
+    #print ( Counter(cat_column) )
+    
+    # Create new feature matrix without the two original columns
+    remaining_indices = [i for i in range(X.shape[1]) if i not in (idx1, idx2)]
+    X_remaining = X[:, remaining_indices]
+    
+    # Combine remaining features with the new categorical feature
+    X_new = np.column_stack((X_remaining, cat_column))
+    
+    return X_new, y

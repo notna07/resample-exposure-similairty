@@ -7,9 +7,10 @@
 import numpy as np
 
 from numpy import ndarray
-from typing import Dict, List, Tuple, Union # Added Union
+from typing import Dict, List, Tuple, Union
 from pandas import DataFrame, Series
-from joblib import Parallel, delayed # Added for parallel processing
+
+from joblib import Parallel, delayed
 
 from .utils.preprocessing import get_cat_variables, scott_ref_rule
 
@@ -19,7 +20,7 @@ class ResampleExposure:
     def __init__(self, target_distribution: DataFrame, 
                  categorical_features: List[str] = None, 
                  unique_threshold: int = 10,
-                 feature_weights: Union[Dict[str, float], np.ndarray, List[float]] = None): # Added feature_weights
+                 feature_weights: Union[Dict[str, float], np.ndarray, List[float]] = None):
         """ Initialize the ResampleExposure with a memorised distribution.
 
         Arguments:
@@ -205,8 +206,8 @@ class ResampleExposure:
         bin_height_diffs = np.abs(bin_height_diffs)
         return np.sum(bin_height_diffs)
 
-    def compute_resample_exposure_index(self, query_point: Series, target_point: Series, normalised: bool = False) -> float:
-        """ Compute the resample exposure index for a given query point and target point.
+    def resample_exposure_sim(self, query_point: Series, target_point: Series, normalised: bool = False) -> float:
+        """ Compute the resample exposure similarity for a given query point and target point.
 
         Arguments:
             - query_point (Series): A query point to compute the resample exposure index for.
