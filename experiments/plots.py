@@ -296,6 +296,7 @@ def plot_clustering_subplots(df: DataFrame, metrics: Dict[str, callable], n_clus
     fig, axes = plt.subplots(1, 6, figsize=(10,2), sharex=True, sharey=True)
     axes = axes.flatten()
 
+    axes[0].set_ylabel('PC2', fontsize=8)
     for i, (metric_name, metric_func) in enumerate(metrics.items()):
         labels, medoid_indices = metric_func(df_x, n_clusters=n_clusters, seed=seed)
 
@@ -305,8 +306,11 @@ def plot_clustering_subplots(df: DataFrame, metrics: Dict[str, callable], n_clus
         pca_result = pca.fit_transform(X_std)
 
         sns.scatterplot(x=pca_result[:, 0], y=pca_result[:, 1], hue=df_y, palette='tab20c', s=20, ax=axes[i])
-        axes[i].set_title(metric_name, fontsize=10)
+        axes[i].set_title(metric_name, fontsize=8)
         axes[i].get_legend().remove()
+        axes[i].set_xlabel('PC1', fontsize=8)
+        axes[i].set_xticklabels([])
+        axes[i].set_yticklabels([])
 
         ## draw lines between the points and the medoids
         cols_palette = sns.color_palette('tab10', n_colors=n_clusters)
@@ -326,7 +330,7 @@ def plot_clustering_subplots(df: DataFrame, metrics: Dict[str, callable], n_clus
 def plot_clustering_scores_artificial_data(res_dataframe: pd.DataFrame) -> None:
 
     # Set up the figure with 2 rows (for ARI and NMI) and 3 columns (for Large/Medium/Small)
-    fig, axes = plt.subplots(2, 3, figsize=(14, 6), sharey='row', sharex=True)
+    fig, axes = plt.subplots(2, 3, figsize=(14, 5.6), sharey='row', sharex=True)
     plt.subplots_adjust(hspace=0.4, wspace=0.15)  # Add spacing between triplets
 
     # Define consistent hue order
@@ -335,7 +339,7 @@ def plot_clustering_scores_artificial_data(res_dataframe: pd.DataFrame) -> None:
 
     metric_order = ['REX', 'GOW', 'GEM', 'HEOM', 'L2', 'L2_OHE']  # Fixed metric order
 
-    Sizes = {'Large':"14", 'Medium':"8", 'Small':'4'}
+    Sizes = {'Large':"(2000,14)", 'Medium':"(1000,8)", 'Small':"(500,4)"}
 
     # Loop through measures and dataset sizes
     for i, measure in enumerate(['ARI', 'NMI']):
@@ -396,7 +400,7 @@ def plot_clustering_scores_artificial_data(res_dataframe: pd.DataFrame) -> None:
             ax.spines[['top', 'right']].set_visible(False)
             ax.yaxis.grid(True, linestyle='--', linewidth=0.5, alpha=0.6)
             if i == 0:
-                ax.set_title(f' # Number of Dimensions = {Sizes[dim]}', fontsize=11)
+                ax.set_title(f' Dataset shape = {Sizes[dim]}', fontsize=11)
             
             # Remove left spine for middle and right columns
             if j > 0:
@@ -422,14 +426,14 @@ def plot_clustering_scores_artificial_data(res_dataframe: pd.DataFrame) -> None:
                 ax.get_legend().remove()
         
     # Add common x-axis label
-    fig.text(0.5, 0.01, 'Distance Metrics', ha='center', va='center', fontsize=12)
+    # fig.text(0.5, 0.01, 'Distance Metrics', ha='center', va='center', fontsize=12)
 
     # Remove individual x-axis labels from all subplots
     for ax in axes.flat:
         ax.set_xlabel('')
 
     plt.tight_layout()
-    plt.subplots_adjust(bottom=0.08)  # Make space for x-axis label
+    # plt.subplots_adjust(bottom=0.08)  # Make space for x-axis label
     plt.savefig("plots/clustering_scores_artificial.pdf", dpi=300)
     # plt.savefig("plots/plotBox Plots.png") 
     plt.show()
