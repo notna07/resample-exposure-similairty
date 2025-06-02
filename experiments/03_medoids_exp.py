@@ -19,7 +19,8 @@ from experiments.data_generators import (data_generator21, data_generator25, dat
                                          data_generator6, data_generator7, data_generator5)
 
 ### Results Data Structure
-Dataset_Scores = {  # For Each Measure
+All_Scores_dict = {
+    'ARI':{
     'Large' :  {
         'Reals'   : {},
         'Balanced': {},
@@ -35,15 +36,24 @@ Dataset_Scores = {  # For Each Measure
         'Balanced': {},
         'Cats'    : {}
     }
-}
-
-ARIs = Dataset_Scores
-NMIs = Dataset_Scores
-
-# Combined Dict
-All_Scores_dict = {
-    'ARI' : ARIs,
-    'NMI' : NMIs
+    },
+    'NMI':{
+    'Large' :  {
+        'Reals'   : {},
+        'Balanced': {},
+        'Cats'    : {}
+    },
+    'Medium' : {
+        'Reals'   : {},
+        'Balanced': {},
+        'Cats'    : {}
+    },
+    'Small' :  {
+        'Reals'   : {},
+        'Balanced': {},
+        'Cats'    : {}
+    }
+    }
 }
 
 #region ### Generate the datasets for the experiments
@@ -163,14 +173,18 @@ def heom_kmedoids_multiple(df: DataFrame, n_clusters: int = 4, seeds: List[int] 
     distance_matrix = heom_distance_matrix(df)
     return run_kmedoids_multiple_seeds(distance_matrix, n_clusters, seeds, 'precomputed')
 
-def resample_exposure_kmedoids_multiple(df: DataFrame, n_clusters: int = 4, seeds: List[int] = range(30, 80)) -> List[ndarray]:
+def resample_exposure_kmedoids_multiple(df: DataFrame, n_clusters: int = 4, seeds: List[int] = range(30, 100)) -> List[ndarray]:
     """Resample Exposure KMedoids with multiple seeds"""
     from rex_score.resample_exposure import ResampleExposure
+ 
+    rev_direction = False
     rex = ResampleExposure(df)
-    exposure_matrix = rex.resample_exposure_matrix(normalised=True, reverse_direction=True)
+    exposure_matrix = rex.resample_exposure_matrix(normalised=True, reverse_direction = rev_direction)
     exposure_matrix = np.ones_like(exposure_matrix) - exposure_matrix
-    
-    return run_kmedoids_multiple_seeds(exposure_matrix.T, n_clusters, seeds, 'precomputed')
+    np.fill_diagonal(exposure_matrix, 0)
+    if rev_direction == True:
+        exposure_matrix = np.transpose(exposure_matrix)
+    return run_kmedoids_multiple_seeds(exposure_matrix, n_clusters, seeds, 'precomputed')
 
 # Function to compute NMI
 def compute_nmis(true_labels, pred_labels_list):
@@ -243,7 +257,7 @@ if __name__ == "__main__":
     start_time = time.time()
     All_Scores_dict['ARI']['Large']['Reals'], All_Scores_dict['NMI']['Large']['Reals'] = compute_scores(Large_Reals_X, Large_Reals_y, n_clusters = 5)
     print ("All_Scores_dict['ARI']['Large']['Reals'] is Done")
-    All_Scores_dict['ARI']['Large']['Balanced'], All_Scores_dict['ARI']['Large']['Balanced'] = compute_scores(Large_Balanced_X, Large_Balanced_y, n_clusters = 5)
+    All_Scores_dict['ARI']['Large']['Balanced'], All_Scores_dict['NMI']['Large']['Balanced'] = compute_scores(Large_Balanced_X, Large_Balanced_y, n_clusters = 5)
     print ("All_Scores_dict['ARI']['Large']['Balanced'] is Done")
     All_Scores_dict['ARI']['Large']['Cats'], All_Scores_dict['NMI']['Large']['Cats'] = compute_scores(Large_Cats_X, Large_Cats_y, n_clusters = 5)
     print ("All_Scores_dict['ARI']['Large']['Balanced'] is Done")

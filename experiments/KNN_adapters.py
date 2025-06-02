@@ -184,13 +184,16 @@ class REX_KNN(KNNAdapter):
         dists, neighbors = self.nn_model.kneighbors(rex_test, n_neighbors, return_distance=True)
         return dists, neighbors
 
-def resample_exposure_kmedoids(df: DataFrame, n_clusters: int = 4, seed: int = 42) -> Tuple[ndarray, ndarray]:
+def resample_exposure_kmedoids(df: DataFrame, n_clusters: int = 4, seed: int = 42, reverse: bool = False) -> Tuple[ndarray, ndarray]:
     rex = ResampleExposure(df)
-    exposure_matrix = rex.resample_exposure_matrix(normalised=True, reverse_direction=True)
+    exposure_matrix = rex.resample_exposure_matrix(normalised=True, reverse_direction=reverse)
     exposure_matrix = np.ones_like(exposure_matrix) - exposure_matrix  # Invert the exposure matrix for PCA
+    np.fill_diagonal(exposure_matrix, 0)  # Set diagonal to 0 to avoid self-distance
+    if reverse:
+        exposure_matrix = np.transpose(exposure_matrix)
 
     kmedoids = KMedoids(n_clusters=n_clusters, random_state=seed, metric='precomputed')
-    kmedoids.fit(exposure_matrix.T)
+    kmedoids.fit(exposure_matrix)
 
     return kmedoids.labels_, kmedoids.medoid_indices_
 

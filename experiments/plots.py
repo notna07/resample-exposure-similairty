@@ -357,7 +357,7 @@ def plot_clustering_scores_artificial_data(res_dataframe: pd.DataFrame) -> None:
                 hue_order=hue_order,
                 order=metric_order,  # Ensure consistent metric order
                 dodge=.2, alpha=.4, legend=False,
-                jitter=False, ax=ax, palette="tab20c"
+                jitter=False, ax=ax, palette="pastel"
             )
             point_plot = sns.pointplot(
                 data=data_subset,
@@ -367,7 +367,7 @@ def plot_clustering_scores_artificial_data(res_dataframe: pd.DataFrame) -> None:
                 dodge=.6, linestyle='none', 
                 errorbar='sd', capsize=0.15,
                 marker="_", markersize=10, markeredgewidth=2.5, 
-                ax=ax, palette="tab20b", alpha=1,
+                ax=ax, palette="tab10", alpha=1,
                 err_kws={'linewidth': 1}
             )
             
@@ -418,7 +418,7 @@ def plot_clustering_scores_artificial_data(res_dataframe: pd.DataFrame) -> None:
                     handles[:len(hue_order)], 
                     [features_distribution_dict.get(k, None) for k in hue_order],
                     title='Feature types',
-                    title_fontsize=9,
+                    title_fontsize=10,
                     fontsize=8,
                     loc='lower right'
                 )
