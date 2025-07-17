@@ -1,3 +1,5 @@
+[![PyPI version](https://badge.fury.io/py/rex-score.svg)](https://badge.fury.io/py/rex-score)
+
 # Resample Exposure Similarity
 
 Resample Exposure similarity is a novel approach to measuring similarity in heterogeneous data based on the frequency of categorical variables and the density distribution of numericals. This library provides a rough implementation of the measure as a class that can compute a similarity matrix. Additional code is included in the repository, for implementing and experimenting with resample exposure similarity and competitors, including functions for calculating similarity matrices, performing nearest neighbour classification, and clustering using partitioning around medoids.
