@@ -7,21 +7,21 @@ Resample Exposure similarity is a novel approach to measuring similarity in hete
  To install the library, run the following command:
 
 ```bash
-pip install 
+pip install rex-score
 ```
 
 ## Tutorial
 
 ```	python
 import seaborn as sns
-from resample_exposure import ResampleExposure
+from rex_score import ResampleExposure
 
 df = sns.load_dataset('penguins')
 df_train, df_test = df.iloc[:300], df.iloc[300:]
 
 # Create an instance of the ResampleExposure class
 # categorical features need not be specified, and will be automatically inferred
-rex = ResampleExposure(target_distribution=df_train,
+rex = ResampleExposure(target_distribution=df_train.dropna(),
                        categorical_features=['species', 'island'], 
                        unique_threshold=5, 
                        feature_weights=None,
@@ -38,7 +38,7 @@ similarity_matrix = rex.resample_exposure_matrix(query_df=df_test,
                                                   normalised = False, 
                                                   reverse_direction = False,
                                                   overwrite_memory = False,
-                                                  n_jobs: int = -1
+                                                  n_jobs = -1
                                                   )
 ```
 For the calculation of the similarity matrix, if no arguments are given it will return the similarity matrix of the target distribution with itself. Reverse direction is to use the query distribution as the target distribution, and the target distribution as the query distribution. Overwrite memory is an experimental feature to overwrite the memory of the marginal distributions with those of the queries in case the distribution of the target points are assumed to be unknown. The `n_jobs` parameter allows for parallel computation, where `-1` uses all available cores. 
@@ -54,5 +54,16 @@ Below is codebooks that can be used to replicate the results shown in the paper.
 | [Codebook 3](03_clustering_medoids.ipynb) | Experiments and results for the partitioning around medoids | Fig.5 |
 
 
-## Requirements
+## Library Requirements
+- pandas
+- numpy
+- joblib
 
+## Experiment Requirements
+- seaborn
+- matplotlib
+- scikit-learn
+- scipy
+- gower
+- json
+- ucimlrepo

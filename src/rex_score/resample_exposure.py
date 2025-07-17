@@ -41,6 +41,7 @@ class ResampleExposure:
             self.categorical_features = detected_cat_features
         else: # combine detected and provided categorical features
             self.categorical_features = list(set(detected_cat_features) | set(categorical_features))
+        print("Categorical features detected:", self.categorical_features)
 
         self.numerical_features = [col for col in self.memorised_distribution.columns if col not in self.categorical_features]
 
