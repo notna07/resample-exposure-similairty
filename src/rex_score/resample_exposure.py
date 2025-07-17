@@ -1,7 +1,7 @@
 # Description: Script for calculating the resample exposure index
 # Author: Anton D. Lautrup
 # Date: 21-05-2025
-# Version: 1.0
+# Version: 1.1
 # License: MIT
 
 import numpy as np
